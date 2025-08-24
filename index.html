@@ -6,7 +6,27 @@
 <style>
   html, body { margin:0; height:100%; background:#0b0b0b; touch-action:none; }
   canvas { display:block; width:100vw; height:100vh; }
+  #ui { position:fixed; top:10px; left:10px; color:#fff; font:16px system-ui,sans-serif; z-index:10; }
+  #ui label { margin-right:10px; }
 </style>
+<div id="ui">
+  <label>Mode:
+    <select id="mode">
+      <option value="place">Place</option>
+      <option value="interact">Interact</option>
+    </select>
+  </label>
+  <label>Object:
+    <select id="object">
+      <option value="ball">Ball</option>
+      <option value="sand">Sand</option>
+      <option value="water">Water</option>
+      <option value="ice">Ice Cube</option>
+      <option value="seed">Palm Seed</option>
+      <option value="dynamite">Dynamite</option>
+    </select>
+  </label>
+</div>
 <canvas id="game"></canvas>
 <script>
 const canvas = document.getElementById('game');
@@ -23,6 +43,78 @@ function resize() {
 }
 addEventListener('resize', resize, { passive:true });
 resize();
+
+codex/edit-index.html-for-physics-sandbox-game-96y30f
+// Gravity always downwards
+const gravity = { x:0, y:500 };
+
+// Sandbox objects
+const objects = [];
+
+function createObject(type, x, y) {
+  switch(type) {
+    case 'sand': return {type, x, y, vx:0, vy:0, r:4, bounce:0.2, color:'#dba'};
+    case 'water': return {type, x, y, vx:0, vy:0, r:4, bounce:0, color:'#39f'};
+    case 'ice': return {type, x, y, vx:0, vy:0, r:15, startR:15, bounce:0.3, color:'#9cf', melt:30};
+    case 'seed': return {type, x, y, vx:0, vy:0, r:5, bounce:0.2, color:'#964B00', grow:0};
+    case 'dynamite': return {type, x, y, vx:0, vy:0, r:8, bounce:0.3, color:'#f00', timer:5};
+    case 'ball': default: return {type:'ball', x, y, vx:0, vy:0, r:20, bounce:0.7, color:'#f88'};
+  }
+}
+
+let dragObj = null;
+let dragOffsetX = 0, dragOffsetY = 0;
+
+canvas.addEventListener('pointerdown', e => {
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  const mode = document.getElementById('mode').value;
+  if (mode === 'place') {
+    const type = document.getElementById('object').value;
+    objects.push(createObject(type, x, y));
+  } else {
+    for (let i = objects.length-1; i>=0; i--) {
+      const o = objects[i];
+      if (o.type === 'tree') continue;
+      const dx = x - o.x;
+      const dy = y - o.y;
+      if (Math.hypot(dx,dy) <= o.r) {
+        dragObj = o;
+        dragOffsetX = dx;
+        dragOffsetY = dy;
+        break;
+      }
+    }
+  }
+});
+
+canvas.addEventListener('pointermove', e => {
+  if (!dragObj) return;
+  const rect = canvas.getBoundingClientRect();
+  dragObj.x = e.clientX - rect.left - dragOffsetX;
+  dragObj.y = e.clientY - rect.top - dragOffsetY;
+  dragObj.vx = 0;
+  dragObj.vy = 0;
+});
+
+canvas.addEventListener('pointerup', () => { dragObj = null; });
+canvas.addEventListener('pointercancel', () => { dragObj = null; });
+
+function collideEdges(o) {
+  if (o.x - o.r < 0) { o.x = o.r; o.vx = Math.abs(o.vx) * o.bounce; }
+  if (o.x + o.r > width) { o.x = width - o.r; o.vx = -Math.abs(o.vx) * o.bounce; }
+  if (o.y - o.r < 0) { o.y = o.r; o.vy = Math.abs(o.vy) * o.bounce; }
+  if (o.y + o.r > height) { o.y = height - o.r; o.vy = -Math.abs(o.vy) * o.bounce; }
+}
+
+function collideObjects() {
+  for (let i = 0; i < objects.length; i++) {
+    const a = objects[i];
+    if (a.type === 'tree') continue;
+    for (let j = i + 1; j < objects.length; j++) {
+      const b = objects[j];
+      if (b.type === 'tree') continue;
 
 // Gravity from device tilt (defaults to downwards)
 const gravity = { x:0, y:500 };
@@ -58,6 +150,7 @@ function collideBalls() {
   for (let i = 0; i < balls.length; i++) {
     for (let j = i + 1; j < balls.length; j++) {
       const a = balls[i], b = balls[j];
+main
       const dx = b.x - a.x;
       const dy = b.y - a.y;
       const dist = Math.hypot(dx, dy);
@@ -71,16 +164,93 @@ function collideBalls() {
         b.x += nx * overlap / 2;
         b.y += ny * overlap / 2;
         const p = (a.vx * nx + a.vy * ny - b.vx * nx - b.vy * ny);
+codex/edit-index.html-for-physics-sandbox-game-96y30f
+        const bounce = Math.min(a.bounce, b.bounce);
+        a.vx -= p * nx * bounce;
+        a.vy -= p * ny * bounce;
+        b.vx += p * nx * bounce;
+        b.vy += p * ny * bounce;
+
         a.vx -= p * nx;
         a.vy -= p * ny;
         b.vx += p * nx;
         b.vy += p * ny;
+main
       }
     }
   }
 }
 
 function update(dt) {
+codex/edit-index.html-for-physics-sandbox-game-96y30f
+  for (let i = objects.length-1; i>=0; i--) {
+    const o = objects[i];
+    if (o.type === 'tree') continue;
+    o.vx += gravity.x * dt;
+    o.vy += gravity.y * dt;
+    o.x += o.vx * dt;
+    o.y += o.vy * dt;
+    collideEdges(o);
+
+    if (o.type === 'ice') {
+      o.melt -= dt;
+      o.r = o.startR * Math.max(o.melt,0) / 30;
+      if (o.melt <= 0) {
+        objects.splice(i,1);
+        objects.push(createObject('water', o.x, o.y));
+        continue;
+      }
+    }
+
+    if (o.type === 'seed') {
+      if (Math.abs(o.vx) < 5 && Math.abs(o.vy) < 5 && o.y + o.r >= height-1) {
+        o.grow += dt;
+      } else {
+        o.grow = 0;
+      }
+      if (o.grow >= 180) {
+        objects.splice(i,1);
+        objects.push({type:'tree', x:o.x, y:height});
+        continue;
+      }
+    }
+
+    if (o.type === 'dynamite') {
+      o.timer -= dt;
+      if (o.timer <= 0) {
+        objects.splice(i,1);
+        for (const other of objects) {
+          if (other === o) continue;
+          const dx = other.x - o.x;
+          const dy = other.y - o.y;
+          const dist = Math.hypot(dx,dy);
+          if (dist < 100 && dist > 0) {
+            const force = 1000 / dist;
+            other.vx += (dx / dist) * force;
+            other.vy += (dy / dist) * force;
+          }
+        }
+        continue;
+      }
+    }
+
+    if (o.type === 'ball') {
+      for (const w of objects) {
+        if (w.type !== 'water') continue;
+        const dx = w.x - o.x;
+        const dy = w.y - o.y;
+        const dist = Math.hypot(dx,dy);
+        const min = w.r + o.r;
+        if (dist < min && dy > 0) {
+          const overlap = min - dist;
+          o.y -= overlap;
+          o.vy -= 50 * overlap;
+        }
+      }
+    }
+  }
+  collideObjects();
+
   for (const b of balls) {
     b.vx += gravity.x * dt;
     b.vy += gravity.y * dt;
@@ -89,11 +259,46 @@ function update(dt) {
     collideEdges(b);
   }
   collideBalls();
+main
 }
 
 function draw() {
   ctx.fillStyle = '#101014';
   ctx.fillRect(0, 0, width, height);
+codex/edit-index.html-for-physics-sandbox-game-96y30f
+  for (const o of objects) {
+    if (o.type === 'tree') {
+      ctx.fillStyle = '#964B00';
+      ctx.fillRect(o.x-5, height-60, 10, 60);
+      ctx.fillStyle = '#0a5';
+      ctx.beginPath();
+      ctx.arc(o.x, height-60, 30, 0, Math.PI, true);
+      ctx.fill();
+      continue;
+    }
+    if (o.type === 'seed') {
+      ctx.fillStyle = o.color;
+      ctx.beginPath();
+      ctx.arc(o.x, o.y, o.r, 0, Math.PI*2);
+      ctx.fill();
+      if (o.grow > 0) {
+        const p = Math.min(o.grow / 180, 1);
+        const h = 60 * p;
+        ctx.fillStyle = '#964B00';
+        ctx.fillRect(o.x-5, height-h, 10, h);
+        ctx.fillStyle = '#0a5';
+        ctx.beginPath();
+        ctx.arc(o.x, height-h, 30 * p, 0, Math.PI, true);
+        ctx.fill();
+      }
+      continue;
+    }
+    ctx.fillStyle = o.color || '#fff';
+    ctx.beginPath();
+    ctx.arc(o.x, o.y, o.r, 0, Math.PI*2);
+    ctx.fill();
+  }
+
   ctx.fillStyle = '#39f';
   for (const b of balls) {
     ctx.beginPath();
@@ -103,6 +308,7 @@ function draw() {
   ctx.fillStyle = '#fff';
   ctx.font = '20px system-ui, sans-serif';
   ctx.fillText('Tap to add balls. Tilt to move them.', 20, 40);
+main
 }
 
 // Game loop
