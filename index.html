@@ -44,6 +44,7 @@ function resize() {
 addEventListener('resize', resize, { passive:true });
 resize();
 
+codex/edit-index.html-for-physics-sandbox-game-96y30f
 // Gravity always downwards
 const gravity = { x:0, y:500 };
 
@@ -114,6 +115,42 @@ function collideObjects() {
     for (let j = i + 1; j < objects.length; j++) {
       const b = objects[j];
       if (b.type === 'tree') continue;
+
+// Gravity from device tilt (defaults to downwards)
+const gravity = { x:0, y:500 };
+window.addEventListener('deviceorientation', e => {
+  const g = 500;
+  if (e.gamma !== null && e.beta !== null) {
+    gravity.x = g * (e.gamma / 90);
+    gravity.y = g * (e.beta / 90);
+  }
+}, true);
+
+// Balls in the sandbox
+const balls = [];
+canvas.addEventListener('pointerdown', e => {
+  const rect = canvas.getBoundingClientRect();
+  balls.push({
+    x: e.clientX - rect.left,
+    y: e.clientY - rect.top,
+    vx: 0,
+    vy: 0,
+    r: 20
+  });
+});
+
+function collideEdges(b) {
+  if (b.x - b.r < 0) { b.x = b.r; b.vx = Math.abs(b.vx) * 0.7; }
+  if (b.x + b.r > width) { b.x = width - b.r; b.vx = -Math.abs(b.vx) * 0.7; }
+  if (b.y - b.r < 0) { b.y = b.r; b.vy = Math.abs(b.vy) * 0.7; }
+  if (b.y + b.r > height) { b.y = height - b.r; b.vy = -Math.abs(b.vy) * 0.7; }
+}
+
+function collideBalls() {
+  for (let i = 0; i < balls.length; i++) {
+    for (let j = i + 1; j < balls.length; j++) {
+      const a = balls[i], b = balls[j];
+main
       const dx = b.x - a.x;
       const dy = b.y - a.y;
       const dist = Math.hypot(dx, dy);
@@ -127,17 +164,25 @@ function collideObjects() {
         b.x += nx * overlap / 2;
         b.y += ny * overlap / 2;
         const p = (a.vx * nx + a.vy * ny - b.vx * nx - b.vy * ny);
+codex/edit-index.html-for-physics-sandbox-game-96y30f
         const bounce = Math.min(a.bounce, b.bounce);
         a.vx -= p * nx * bounce;
         a.vy -= p * ny * bounce;
         b.vx += p * nx * bounce;
         b.vy += p * ny * bounce;
+
+        a.vx -= p * nx;
+        a.vy -= p * ny;
+        b.vx += p * nx;
+        b.vy += p * ny;
+main
       }
     }
   }
 }
 
 function update(dt) {
+codex/edit-index.html-for-physics-sandbox-game-96y30f
   for (let i = objects.length-1; i>=0; i--) {
     const o = objects[i];
     if (o.type === 'tree') continue;
@@ -205,11 +250,22 @@ function update(dt) {
     }
   }
   collideObjects();
+
+  for (const b of balls) {
+    b.vx += gravity.x * dt;
+    b.vy += gravity.y * dt;
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    collideEdges(b);
+  }
+  collideBalls();
+main
 }
 
 function draw() {
   ctx.fillStyle = '#101014';
   ctx.fillRect(0, 0, width, height);
+codex/edit-index.html-for-physics-sandbox-game-96y30f
   for (const o of objects) {
     if (o.type === 'tree') {
       ctx.fillStyle = '#964B00';
@@ -242,6 +298,17 @@ function draw() {
     ctx.arc(o.x, o.y, o.r, 0, Math.PI*2);
     ctx.fill();
   }
+
+  ctx.fillStyle = '#39f';
+  for (const b of balls) {
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = '#fff';
+  ctx.font = '20px system-ui, sans-serif';
+  ctx.fillText('Tap to add balls. Tilt to move them.', 20, 40);
+main
 }
 
 // Game loop
