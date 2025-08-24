@@ -56,15 +56,23 @@ window.addEventListener('deviceorientation', e => {
 
 // Sandbox objects
 const objects = [];
+const particles = [];// visual effects like explosions and splashes
+let placeInterval = null;// for streaming sand placement
 
 function createObject(type, x, y) {
   switch(type) {
-    case 'sand': return {type, x, y, vx:0, vy:0, r:4, bounce:0.2, color:'#dba'};
-    case 'water': return {type, x, y, vx:0, vy:0, r:4, bounce:0, color:'#39f'};
-    case 'ice': return {type, x, y, vx:0, vy:0, r:15, startR:15, bounce:0.3, color:'#9cf', melt:30};
-    case 'seed': return {type, x, y, vx:0, vy:0, r:5, bounce:0.2, color:'#964B00', grow:0};
-    case 'dynamite': return {type, x, y, vx:0, vy:0, r:8, bounce:0.3, color:'#f00', timer:5};
-    case 'ball': default: return {type:'ball', x, y, vx:0, vy:0, r:20, bounce:0.7, color:'#f88'};
+    case 'sand':
+      return {type, x, y, vx:0, vy:0, r:2, bounce:0.1, color:'#dba'};
+    case 'water':
+      return {type, x, y, vx:0, vy:0, r:5, bounce:0, color:'#39f', fluid:true};
+    case 'ice':
+      return {type, x, y, vx:0, vy:0, r:15, startR:15, bounce:0.3, color:'#9cf', melt:30};
+    case 'seed':
+      return {type, x, y, vx:0, vy:0, r:5, bounce:0.2, color:'#964B00', grow:0};
+    case 'dynamite':
+      return {type, x, y, vx:0, vy:0, r:10, bounce:0.3, color:'#f00', timer:5, fuse:1};
+    case 'ball': default:
+      return {type:'ball', x, y, vx:0, vy:0, r:20, bounce:0.7, color:'#f88'};
   }
 }
 
@@ -83,7 +91,13 @@ canvas.addEventListener('pointerdown', e => {
   const mode = document.getElementById('mode').value;
   if (mode === 'place') {
     const type = document.getElementById('object').value;
-    objects.push(createObject(type, x, y));
+    const placeObj = () => objects.push(createObject(type, prevX, prevY));
+    if (type === 'sand') {
+      placeObj();
+      placeInterval = setInterval(placeObj, 50);
+    } else {
+      objects.push(createObject(type, x, y));
+    }
   } else {
     for (let i = objects.length - 1; i >= 0; i--) {
       const o = objects[i];
@@ -103,6 +117,10 @@ canvas.addEventListener('pointermove', e => {
   const rect = canvas.getBoundingClientRect();
   const x = e.clientX - rect.left;
   const y = e.clientY - rect.top;
+  if (placeInterval) {
+    prevX = x;
+    prevY = y;
+  }
   if (dragObj) {
     dragObj.x = x - dragOffsetX;
     dragObj.y = y - dragOffsetY;
@@ -127,6 +145,10 @@ canvas.addEventListener('pointermove', e => {
 function endInteract() {
   dragObj = null;
   pushMode = false;
+  if (placeInterval) {
+    clearInterval(placeInterval);
+    placeInterval = null;
+  }
 }
 canvas.addEventListener('pointerup', endInteract);
 canvas.addEventListener('pointercancel', endInteract);
@@ -179,12 +201,28 @@ function update(dt) {
     collideEdges(o);
 
     if (o.type === 'ice') {
+      // slowly melt and drip water
       o.melt -= dt;
+      if (Math.random() < dt * 2) {
+        objects.push(createObject('water', o.x + (Math.random()-0.5)*o.r, o.y + o.r));
+      }
       o.r = o.startR * Math.max(o.melt, 0) / 30;
       if (o.melt <= 0) {
         objects.splice(i, 1);
-        objects.push(createObject('water', o.x, o.y));
         continue;
+      }
+      // float on water similar to ball
+      for (const w of objects) {
+        if (w.type !== 'water') continue;
+        const dx = w.x - o.x;
+        const dy = w.y - o.y;
+        const dist = Math.hypot(dx, dy);
+        const min = w.r + o.r;
+        if (dist < min && dy > 0) {
+          const overlap = min - dist;
+          o.y -= overlap;
+          o.vy -= 50 * overlap;
+        }
       }
     }
 
@@ -203,8 +241,13 @@ function update(dt) {
 
     if (o.type === 'dynamite') {
       o.timer -= dt;
+      o.fuse -= dt;
+      if (o.fuse < 0) o.fuse = 1; // loop fuse spark
       if (o.timer <= 0) {
         objects.splice(i, 1);
+        for (let n=0;n<20;n++) {
+          particles.push({type:'explosion', x:o.x, y:o.y, vx:(Math.random()-0.5)*400, vy:(Math.random()-0.5)*400, life:0.5});
+        }
         for (const other of objects) {
           if (other === o) continue;
           const dx = other.x - o.x;
@@ -219,7 +262,6 @@ function update(dt) {
         continue;
       }
     }
-
     if (o.type === 'ball') {
       for (const w of objects) {
         if (w.type !== 'water') continue;
@@ -234,15 +276,58 @@ function update(dt) {
         }
       }
     }
+
+    if (o.type === 'sand') {
+      // sand sinks through water
+      for (const w of objects) {
+        if (w.type !== 'water') continue;
+        const dx = w.x - o.x;
+        const dy = w.y - o.y;
+        const dist = Math.hypot(dx, dy);
+        const min = w.r + o.r;
+        if (dist < min && dy < 0) {
+          o.y += min - dist;
+          w.y -= min - dist;
+          const tvx = o.vx; o.vx = w.vx; w.vx = tvx;
+          const tvy = o.vy; o.vy = w.vy; w.vy = tvy;
+        }
+      }
+    }
+
+    if (o.type !== 'water' && o.type !== 'sand') {
+      for (const w of objects) {
+        if (w.type !== 'water') continue;
+        const dx = w.x - o.x;
+        const dy = w.y - o.y;
+        const dist = Math.hypot(dx, dy);
+        const min = w.r + o.r;
+        if (dist < min && o.vy > 150) {
+          for (let n=0;n<5;n++) {
+            particles.push({type:'splash', x:o.x, y:o.y, vx:(Math.random()-0.5)*100, vy:-Math.random()*200, life:0.5});
+          }
+          break;
+        }
+      }
+    }
   }
   collideObjects();
+
+  // update visual particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vy += gravity.y * dt;
+    p.life -= dt;
+    if (p.life <= 0) particles.splice(i,1);
+  }
 }
 
 function draw() {
   ctx.fillStyle = '#101014';
   ctx.fillRect(0, 0, width, height);
-  for (const o of objects) {
-    if (o.type === 'tree') {
+    for (const o of objects) {
+      if (o.type === 'tree') {
       ctx.fillStyle = '#964B00';
       ctx.fillRect(o.x - 5, height - 60, 10, 60);
       ctx.fillStyle = '#0a5';
@@ -251,7 +336,7 @@ function draw() {
       ctx.fill();
       continue;
     }
-    if (o.type === 'seed') {
+      if (o.type === 'seed') {
       ctx.fillStyle = o.color;
       ctx.beginPath();
       ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2);
@@ -268,12 +353,52 @@ function draw() {
       }
       continue;
     }
-    ctx.fillStyle = o.color || '#fff';
-    ctx.beginPath();
-    ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2);
-    ctx.fill();
+      if (o.type === 'sand') {
+        ctx.fillStyle = o.color;
+        ctx.fillRect(o.x - 1, o.y - 1, 2, 2);
+        continue;
+      }
+      if (o.type === 'ice') {
+        ctx.fillStyle = o.color;
+        const size = o.r*2;
+        ctx.fillRect(o.x - o.r, o.y - o.r, size, size);
+        continue;
+      }
+      if (o.type === 'dynamite') {
+        ctx.fillStyle = '#f00';
+        ctx.fillRect(o.x - 5, o.y - 15, 10, 30);
+        // fuse
+        ctx.strokeStyle = '#555';
+        ctx.beginPath();
+        ctx.moveTo(o.x, o.y - 15);
+        ctx.lineTo(o.x, o.y - 20);
+        ctx.stroke();
+        const sparkX = o.x + (Math.random()-0.5)*2;
+        const sparkY = o.y - 20 - o.fuse*5;
+        ctx.fillStyle = '#ff0';
+        ctx.fillRect(sparkX-1, sparkY-1, 2, 2);
+        continue;
+      }
+      ctx.fillStyle = o.color || '#fff';
+      ctx.beginPath();
+      ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // draw particles
+    for (const p of particles) {
+      if (p.type === 'explosion') {
+        ctx.fillStyle = 'orange';
+      } else {
+        ctx.fillStyle = '#39f';
+      }
+      ctx.globalAlpha = Math.max(p.life,0);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 2, 0, Math.PI*2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
   }
-}
 
 // Game loop
 let last = performance.now();
