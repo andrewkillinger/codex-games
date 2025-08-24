@@ -6,410 +6,294 @@
 <style>
   html, body { margin:0; height:100%; background:#0b0b0b; touch-action:none; }
   canvas { display:block; width:100vw; height:100vh; }
-  #ui { position:fixed; top:10px; left:10px; color:#fff; font:16px system-ui,sans-serif; z-index:10; }
-  #ui label { margin-right:10px; }
 </style>
-<div id="ui">
-  <label>Mode:
-    <select id="mode">
-      <option value="place">Place</option>
-      <option value="interact">Interact</option>
-    </select>
-  </label>
-  <label>Object:
-    <select id="object">
-      <option value="ball">Ball</option>
-      <option value="sand">Sand</option>
-      <option value="water">Water</option>
-      <option value="ice">Ice Cube</option>
-      <option value="seed">Palm Seed</option>
-      <option value="dynamite">Dynamite</option>
-    </select>
-  </label>
-</div>
 <canvas id="game"></canvas>
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d', { alpha:false });
 
-let width = 0, height = 0;
+// Material constants
+const EMPTY=0, SAND=1, WATER=2, SOIL=3, GRASS=4, BOMB=5;
+const cellSize = 4;  // grid cell size in pixels
+
+let width=0, height=0;
+let simCols=0, simRows=0;
+let grid=[], isStatic=[];
+let bombs=[];
+let soilExposeTime={}, grassCoverTime={};
+
 function resize() {
   const ratio = window.devicePixelRatio || 1;
-  canvas.width = Math.floor(window.innerWidth * ratio);
-  canvas.height = Math.floor(window.innerHeight * ratio);
+  width = window.innerWidth;
+  height = window.innerHeight;
+  canvas.width = width * ratio;
+  canvas.height = height * ratio;
   ctx.setTransform(ratio,0,0,ratio,0,0);
-  width = canvas.width / ratio;
-  height = canvas.height / ratio;
+  simCols = Math.floor(width / cellSize);
+  simRows = Math.floor(height / cellSize);
+  grid = Array.from({length: simRows}, () => Array(simCols).fill(EMPTY));
+  isStatic = Array.from({length: simRows}, () => Array(simCols).fill(false));
 }
 addEventListener('resize', resize, { passive:true });
 resize();
 
-// Gravity - updated via device tilt if available
-const gravity = { x:0, y:500 };
-window.addEventListener('deviceorientation', e => {
-  const g = 500;
-  if (e.gamma !== null && e.beta !== null) {
-    gravity.x = g * (e.gamma / 90);
-    gravity.y = g * (e.beta / 90);
-  }
-}, true);
-
-// Sandbox objects
-const objects = [];
-const particles = [];// visual effects like explosions and splashes
-let placeInterval = null;// for streaming sand placement
-
-function createObject(type, x, y) {
-  switch(type) {
-    case 'sand':
-      return {type, x, y, vx:0, vy:0, r:2, bounce:0.1, color:'#dba'};
-    case 'water':
-      return {type, x, y, vx:0, vy:0, r:5, bounce:0, color:'#39f', fluid:true};
-    case 'ice':
-      return {type, x, y, vx:0, vy:0, r:15, startR:15, bounce:0.3, color:'#9cf', melt:30};
-    case 'seed':
-      return {type, x, y, vx:0, vy:0, r:5, bounce:0.2, color:'#964B00', grow:0};
-    case 'dynamite':
-      return {type, x, y, vx:0, vy:0, r:10, bounce:0.3, color:'#f00', timer:5, fuse:1};
-    case 'ball': default:
-      return {type:'ball', x, y, vx:0, vy:0, r:20, bounce:0.7, color:'#f88'};
-  }
-}
-
-// Interaction state
-let dragObj = null;
-let dragOffsetX = 0, dragOffsetY = 0;
-let pushMode = false;
-let prevX = 0, prevY = 0;
-
-canvas.addEventListener('pointerdown', e => {
-  const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-  prevX = x;
-  prevY = y;
-  const mode = document.getElementById('mode').value;
-  if (mode === 'place') {
-    const type = document.getElementById('object').value;
-    const placeObj = () => objects.push(createObject(type, prevX, prevY));
-    if (type === 'sand') {
-      placeObj();
-      placeInterval = setInterval(placeObj, 50);
-    } else {
-      objects.push(createObject(type, x, y));
-    }
-  } else {
-    for (let i = objects.length - 1; i >= 0; i--) {
-      const o = objects[i];
-      if (o.type === 'tree') continue;
-      if (Math.hypot(x - o.x, y - o.y) <= o.r) {
-        dragObj = o;
-        dragOffsetX = x - o.x;
-        dragOffsetY = y - o.y;
-        return;
-      }
-    }
-    pushMode = true;
-  }
-});
-
-canvas.addEventListener('pointermove', e => {
-  const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-  if (placeInterval) {
-    prevX = x;
-    prevY = y;
-  }
-  if (dragObj) {
-    dragObj.x = x - dragOffsetX;
-    dragObj.y = y - dragOffsetY;
-    dragObj.vx = 0;
-    dragObj.vy = 0;
-  } else if (pushMode) {
-    const dx = x - prevX;
-    const dy = y - prevY;
-    prevX = x;
-    prevY = y;
-    const force = 50;
-    for (const o of objects) {
-      const dist = Math.hypot(x - o.x, y - o.y);
-      if (dist < o.r + 20) {
-        o.vx += dx * force / (o.r + 20);
-        o.vy += dy * force / (o.r + 20);
-      }
-    }
-  }
-});
-
-function endInteract() {
-  dragObj = null;
-  pushMode = false;
-  if (placeInterval) {
-    clearInterval(placeInterval);
-    placeInterval = null;
-  }
-}
-canvas.addEventListener('pointerup', endInteract);
-canvas.addEventListener('pointercancel', endInteract);
-
-function collideEdges(o) {
-  if (o.x - o.r < 0) { o.x = o.r; o.vx = Math.abs(o.vx) * o.bounce; }
-  if (o.x + o.r > width) { o.x = width - o.r; o.vx = -Math.abs(o.vx) * o.bounce; }
-  if (o.y - o.r < 0) { o.y = o.r; o.vy = Math.abs(o.vy) * o.bounce; }
-  if (o.y + o.r > height) { o.y = height - o.r; o.vy = -Math.abs(o.vy) * o.bounce; }
-}
-
-function collideObjects() {
-  for (let i = 0; i < objects.length; i++) {
-    const a = objects[i];
-    if (a.type === 'tree') continue;
-    for (let j = i + 1; j < objects.length; j++) {
-      const b = objects[j];
-      if (b.type === 'tree') continue;
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const dist = Math.hypot(dx, dy);
-      const min = a.r + b.r;
-      if (dist > 0 && dist < min) {
-        const nx = dx / dist;
-        const ny = dy / dist;
-        const overlap = min - dist;
-        a.x -= nx * overlap / 2;
-        a.y -= ny * overlap / 2;
-        b.x += nx * overlap / 2;
-        b.y += ny * overlap / 2;
-        const p = (a.vx * nx + a.vy * ny - b.vx * nx - b.vy * ny);
-        const bounce = Math.min(a.bounce, b.bounce);
-        a.vx -= p * nx * bounce;
-        a.vy -= p * ny * bounce;
-        b.vx += p * nx * bounce;
-        b.vy += p * ny * bounce;
-      }
-    }
-  }
-}
-
-function update(dt) {
-  for (let i = objects.length - 1; i >= 0; i--) {
-    const o = objects[i];
-    if (o.type === 'tree') continue;
-    o.vx += gravity.x * dt;
-    o.vy += gravity.y * dt;
-    o.x += o.vx * dt;
-    o.y += o.vy * dt;
-    collideEdges(o);
-
-    if (o.type === 'ice') {
-      // slowly melt and drip water
-      o.melt -= dt;
-      if (Math.random() < dt * 2) {
-        objects.push(createObject('water', o.x + (Math.random()-0.5)*o.r, o.y + o.r));
-      }
-      o.r = o.startR * Math.max(o.melt, 0) / 30;
-      if (o.melt <= 0) {
-        objects.splice(i, 1);
-        continue;
-      }
-      // float on water similar to ball
-      for (const w of objects) {
-        if (w.type !== 'water') continue;
-        const dx = w.x - o.x;
-        const dy = w.y - o.y;
-        const dist = Math.hypot(dx, dy);
-        const min = w.r + o.r;
-        if (dist < min && dy > 0) {
-          const overlap = min - dist;
-          o.y -= overlap;
-          o.vy -= 50 * overlap;
+let frame = 0;
+function updateParticles() {
+  frame++;
+  const biasLeftFirst = (frame % 2 === 0);
+  for (let y = simRows - 2; y >= 0; y--) {
+    const xStart = (frame % 2 === 0 ? 0 : simCols - 1);
+    const xEnd   = (frame % 2 === 0 ? simCols : -1);
+    const xStep  = (frame % 2 === 0 ? 1 : -1);
+    for (let x = xStart; x !== xEnd; x += xStep) {
+      const type = grid[y][x];
+      if (type===EMPTY || type===GRASS) continue;
+      if (isStatic[y][x]) continue;
+      const belowY = y + 1;
+      const leftX = x - 1, rightX = x + 1;
+      const inBoundsX = nx => (nx >= 0 && nx < simCols);
+      const cell = (r,c) => grid[r]?.[c];
+      let moved = false;
+      if (cell(belowY, x) === EMPTY) {
+        grid[belowY][x] = type;
+        grid[y][x] = EMPTY;
+        isStatic[belowY][x] = false;
+        isStatic[y][x] = false;
+        if (y - 1 >= 0 && isStatic[y-1][x]) isStatic[y-1][x] = false;
+        moved = true;
+      } else if (biasLeftFirst) {
+        if (inBoundsX(leftX) && cell(belowY, leftX) === EMPTY) {
+          grid[belowY][leftX] = type;
+          grid[y][x] = EMPTY;
+          isStatic[belowY][leftX] = false;
+          isStatic[y][x] = false;
+          if (y - 1 >= 0 && isStatic[y-1][x]) isStatic[y-1][x] = false;
+          moved = true;
+        } else if (inBoundsX(rightX) && cell(belowY, rightX) === EMPTY) {
+          grid[belowY][rightX] = type;
+          grid[y][x] = EMPTY;
+          isStatic[belowY][rightX] = false;
+          isStatic[y][x] = false;
+          if (y - 1 >= 0 && isStatic[y-1][x]) isStatic[y-1][x] = false;
+          moved = true;
         }
-      }
-    }
-
-    if (o.type === 'seed') {
-      if (Math.abs(o.vx) < 5 && Math.abs(o.vy) < 5 && o.y + o.r >= height - 1) {
-        o.grow += dt;
       } else {
-        o.grow = 0;
-      }
-      if (o.grow >= 180) {
-        objects.splice(i, 1);
-        objects.push({type:'tree', x:o.x, y:height});
-        continue;
-      }
-    }
-
-    if (o.type === 'dynamite') {
-      o.timer -= dt;
-      o.fuse -= dt;
-      if (o.fuse < 0) o.fuse = 1; // loop fuse spark
-      if (o.timer <= 0) {
-        objects.splice(i, 1);
-        for (let n=0;n<20;n++) {
-          particles.push({type:'explosion', x:o.x, y:o.y, vx:(Math.random()-0.5)*400, vy:(Math.random()-0.5)*400, life:0.5});
+        if (inBoundsX(rightX) && cell(belowY, rightX) === EMPTY) {
+          grid[belowY][rightX] = type;
+          grid[y][x] = EMPTY;
+          isStatic[belowY][rightX] = false;
+          isStatic[y][x] = false;
+          if (y - 1 >= 0 && isStatic[y-1][x]) isStatic[y-1][x] = false;
+          moved = true;
+        } else if (inBoundsX(leftX) && cell(belowY, leftX) === EMPTY) {
+          grid[belowY][leftX] = type;
+          grid[y][x] = EMPTY;
+          isStatic[belowY][leftX] = false;
+          isStatic[y][x] = false;
+          if (y - 1 >= 0 && isStatic[y-1][x]) isStatic[y-1][x] = false;
+          moved = true;
         }
-        for (const other of objects) {
-          if (other === o) continue;
-          const dx = other.x - o.x;
-          const dy = other.y - o.y;
-          const dist = Math.hypot(dx, dy);
-          if (dist < 100 && dist > 0) {
-            const force = 1000 / dist;
-            other.vx += (dx / dist) * force;
-            other.vy += (dy / dist) * force;
+      }
+      if (!moved && type === WATER) {
+        if (cell(belowY, x) !== EMPTY) {
+          const dir = Math.random() < 0.5 ? -1 : 1;
+          for (let attempt = 0; attempt < 2; attempt++) {
+            const nx = (attempt === 0 ? x + dir : x - dir);
+            if (inBoundsX(nx) && cell(y, nx) === EMPTY && cell(belowY, nx) !== EMPTY) {
+              grid[y][nx] = WATER;
+              grid[y][x] = EMPTY;
+              isStatic[y][nx] = false;
+              isStatic[y][x] = false;
+              moved = true;
+              break;
+            }
           }
         }
-        continue;
       }
-    }
-    if (o.type === 'ball') {
-      for (const w of objects) {
-        if (w.type !== 'water') continue;
-        const dx = w.x - o.x;
-        const dy = w.y - o.y;
-        const dist = Math.hypot(dx, dy);
-        const min = w.r + o.r;
-        if (dist < min && dy > 0) {
-          const overlap = min - dist;
-          o.y -= overlap;
-          o.vy -= 50 * overlap;
+      if (!moved && cell(belowY, x) !== undefined) {
+        const belowType = cell(belowY, x);
+        const density = { [WATER]:1, [SAND]:2, [SOIL]:2, [BOMB]:3 };
+        if (belowType !== EMPTY && density[type] > density[belowType]) {
+          grid[belowY][x] = type;
+          grid[y][x] = belowType;
+          isStatic[belowY][x] = false;
+          isStatic[y][x] = false;
+          moved = true;
         }
       }
-    }
-
-    if (o.type === 'sand') {
-      // sand sinks through water
-      for (const w of objects) {
-        if (w.type !== 'water') continue;
-        const dx = w.x - o.x;
-        const dy = w.y - o.y;
-        const dist = Math.hypot(dx, dy);
-        const min = w.r + o.r;
-        if (dist < min && dy < 0) {
-          o.y += min - dist;
-          w.y -= min - dist;
-          const tvx = o.vx; o.vx = w.vx; w.vx = tvx;
-          const tvy = o.vy; o.vy = w.vy; w.vy = tvy;
-        }
-      }
-    }
-
-    if (o.type !== 'water' && o.type !== 'sand') {
-      for (const w of objects) {
-        if (w.type !== 'water') continue;
-        const dx = w.x - o.x;
-        const dy = w.y - o.y;
-        const dist = Math.hypot(dx, dy);
-        const min = w.r + o.r;
-        if (dist < min && o.vy > 150) {
-          for (let n=0;n<5;n++) {
-            particles.push({type:'splash', x:o.x, y:o.y, vx:(Math.random()-0.5)*100, vy:-Math.random()*200, life:0.5});
-          }
-          break;
-        }
+      if (!moved) {
+        isStatic[y][x] = true;
       }
     }
   }
-  collideObjects();
+}
 
-  // update visual particles
-  for (let i = particles.length - 1; i >= 0; i--) {
-    const p = particles[i];
-    p.x += p.vx * dt;
-    p.y += p.vy * dt;
-    p.vy += gravity.y * dt;
-    p.life -= dt;
-    if (p.life <= 0) particles.splice(i,1);
+const BLAST_RADIUS = 5;
+const BLAST_INNER = 2;
+function updateBombs(dt) {
+  for (let i = bombs.length - 1; i >= 0; i--) {
+    bombs[i].fuse -= dt;
+    if (bombs[i].fuse <= 0) {
+      const bx = bombs[i].x, by = bombs[i].y;
+      grid[by][bx] = EMPTY;
+      isStatic[by][bx] = false;
+      for (let yy = Math.max(0, by - BLAST_RADIUS); yy <= Math.min(simRows-1, by + BLAST_RADIUS); yy++) {
+        for (let xx = Math.max(0, bx - BLAST_RADIUS); xx <= Math.min(simCols-1, bx + BLAST_RADIUS); xx++) {
+          const dx = xx - bx, dy = yy - by;
+          const distSq = dx*dx + dy*dy;
+          if (distSq <= BLAST_RADIUS * BLAST_RADIUS) {
+            const dist = Math.sqrt(distSq);
+            if (dist <= BLAST_INNER) {
+              if (grid[yy][xx] !== EMPTY) {
+                grid[yy][xx] = EMPTY;
+                isStatic[yy][xx] = false;
+                delete soilExposeTime[`${xx},${yy}`];
+                delete grassCoverTime[`${xx},${yy}`];
+              }
+            } else {
+              if (grid[yy][xx] !== EMPTY && grid[yy][xx] !== BOMB) {
+                const pushX = dx / dist, pushY = dy / dist;
+                const force = 1 / distSq;
+                const throwDist = Math.min(Math.ceil(force * BLAST_RADIUS * 2), BLAST_RADIUS);
+                let newX = xx + Math.round(pushX * throwDist);
+                let newY = yy + Math.round(pushY * throwDist);
+                newX = Math.max(0, Math.min(simCols-1, newX));
+                newY = Math.max(0, Math.min(simRows-1, newY));
+                if (!(newX === xx && newY === yy)) {
+                  if (grid[newY][newX] !== EMPTY) {
+                    let placed = false;
+                    for (let oy = -1; oy <= 1 && !placed; oy++) {
+                      for (let ox = -1; ox <= 1 && !placed; ox++) {
+                        const tx = xx + ox, ty = yy + oy;
+                        if (tx>=0 && tx<simCols && ty>=0 && ty<simRows && grid[ty][tx]===EMPTY) {
+                          newX = tx; newY = ty; placed = true;
+                        }
+                      }
+                    }
+                    if (!placed) continue;
+                  }
+                  grid[newY][newX] = grid[yy][xx];
+                  grid[yy][xx] = EMPTY;
+                  isStatic[newY][newX] = false;
+                  isStatic[yy][xx] = false;
+                }
+              }
+            }
+          }
+        }
+      }
+      bombs.splice(i, 1);
+    }
+  }
+}
+
+function updateSoilAndGrass(dt) {
+  for (let y = 0; y < simRows; y++) {
+    for (let x = 0; x < simCols; x++) {
+      if (grid[y][x] === SOIL) {
+        if (y === 0 || grid[y-1][x] === EMPTY) {
+          const key = `${x},${y}`;
+          soilExposeTime[key] = (soilExposeTime[key] || 0) + dt;
+          if (soilExposeTime[key] >= 180) {
+            grid[y][x] = GRASS;
+            grassCoverTime[key] = 0;
+            soilExposeTime[key] = 0;
+          }
+        } else {
+          soilExposeTime[`${x},${y}`] = 0;
+        }
+      }
+      else if (grid[y][x] === GRASS) {
+        const key = `${x},${y}`;
+        if (y !== 0 && grid[y-1][x] !== EMPTY) {
+          grassCoverTime[key] = (grassCoverTime[key] || 0) + dt;
+          if (grassCoverTime[key] >= 30) {
+            grid[y][x] = SOIL;
+            soilExposeTime[key] = 0;
+            grassCoverTime[key] = 0;
+          }
+        } else {
+          grassCoverTime[key] = 0;
+        }
+      }
+    }
   }
 }
 
 function draw() {
   ctx.fillStyle = '#101014';
   ctx.fillRect(0, 0, width, height);
-    for (const o of objects) {
-      if (o.type === 'tree') {
-      ctx.fillStyle = '#964B00';
-      ctx.fillRect(o.x - 5, height - 60, 10, 60);
-      ctx.fillStyle = '#0a5';
-      ctx.beginPath();
-      ctx.arc(o.x, height - 60, 30, 0, Math.PI, true);
-      ctx.fill();
-      continue;
-    }
-      if (o.type === 'seed') {
-      ctx.fillStyle = o.color;
-      ctx.beginPath();
-      ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2);
-      ctx.fill();
-      if (o.grow > 0) {
-        const p = Math.min(o.grow / 180, 1);
-        const h = 60 * p;
-        ctx.fillStyle = '#964B00';
-        ctx.fillRect(o.x - 5, height - h, 10, h);
-        ctx.fillStyle = '#0a5';
-        ctx.beginPath();
-        ctx.arc(o.x, height - h, 30 * p, 0, Math.PI, true);
-        ctx.fill();
+  for (let y = 0; y < simRows; y++) {
+    for (let x = 0; x < simCols; x++) {
+      switch(grid[y][x]) {
+        case SAND: ctx.fillStyle = '#fc0'; break;
+        case WATER: ctx.fillStyle = '#39f'; break;
+        case SOIL: ctx.fillStyle = '#764c24'; break;
+        case GRASS: ctx.fillStyle = '#3c9d30'; break;
+        case BOMB: ctx.fillStyle = '#f00'; break;
+        default: continue;
       }
-      continue;
-    }
-      if (o.type === 'sand') {
-        ctx.fillStyle = o.color;
-        ctx.fillRect(o.x - 1, o.y - 1, 2, 2);
-        continue;
-      }
-      if (o.type === 'ice') {
-        ctx.fillStyle = o.color;
-        const size = o.r*2;
-        ctx.fillRect(o.x - o.r, o.y - o.r, size, size);
-        continue;
-      }
-      if (o.type === 'dynamite') {
-        ctx.fillStyle = '#f00';
-        ctx.fillRect(o.x - 5, o.y - 15, 10, 30);
-        // fuse
-        ctx.strokeStyle = '#555';
-        ctx.beginPath();
-        ctx.moveTo(o.x, o.y - 15);
-        ctx.lineTo(o.x, o.y - 20);
-        ctx.stroke();
-        const sparkX = o.x + (Math.random()-0.5)*2;
-        const sparkY = o.y - 20 - o.fuse*5;
-        ctx.fillStyle = '#ff0';
-        ctx.fillRect(sparkX-1, sparkY-1, 2, 2);
-        continue;
-      }
-      ctx.fillStyle = o.color || '#fff';
-      ctx.beginPath();
-      ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // draw particles
-    for (const p of particles) {
-      if (p.type === 'explosion') {
-        ctx.fillStyle = 'orange';
-      } else {
-        ctx.fillStyle = '#39f';
-      }
-      ctx.globalAlpha = Math.max(p.life,0);
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 2, 0, Math.PI*2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
+      ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
     }
   }
+}
 
-// Game loop
 let last = performance.now();
 function loop(now) {
-  const dt = Math.min(0.033, (now - last) / 1000);
+  const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
-  update(dt);
+  updateParticles();
+  updateBombs(dt);
+  updateSoilAndGrass(dt);
   draw();
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
+
+// Input handling
+let currentMaterial = WATER;
+window.addEventListener('keydown', e => {
+  if (e.key === '1') currentMaterial = WATER;
+  if (e.key === '2') currentMaterial = SAND;
+  if (e.key === '3') currentMaterial = SOIL;
+  if (e.key === '4') currentMaterial = BOMB;
+});
+
+let spawnInterval;
+canvas.addEventListener('pointerdown', e => {
+  const rect = canvas.getBoundingClientRect();
+  const gridX = Math.floor((e.clientX - rect.left) / cellSize);
+  const gridY = Math.floor((e.clientY - rect.top) / cellSize);
+  function spawnParticle() {
+    if (gridY < 0 || gridY >= simRows || gridX < 0 || gridX >= simCols) return;
+    if (currentMaterial === SOIL) {
+      const r = 2;
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (dx*dx + dy*dy <= r*r) {
+            const x = gridX + dx, y = gridY + dy;
+            if (y >= 0 && y < simRows && x >= 0 && x < simCols && grid[y][x] === EMPTY) {
+              grid[y][x] = SOIL;
+              isStatic[y][x] = false;
+              soilExposeTime[`${x},${y}`] = 0;
+            }
+          }
+        }
+      }
+    } else {
+      if (grid[gridY][gridX] === EMPTY) {
+        grid[gridY][gridX] = currentMaterial;
+        isStatic[gridY][gridX] = false;
+        if (currentMaterial === BOMB) {
+          bombs.push({x: gridX, y: gridY, fuse: 3});
+        }
+      }
+    }
+  }
+  spawnParticle();
+  clearInterval(spawnInterval);
+  spawnInterval = setInterval(spawnParticle, 50);
+});
+['pointerup','pointercancel','pointerout'].forEach(ev => canvas.addEventListener(ev, () => clearInterval(spawnInterval)));
 </script>
 </html>
-
