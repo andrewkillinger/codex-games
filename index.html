@@ -5,12 +5,29 @@
 <title>Physics Sandbox</title>
 <style>
   html, body { margin:0; height:100%; background:#0b0b0b; touch-action:none; }
-  canvas { display:block; width:100vw; height:100vh; }
+  #toolbar { position:fixed; top:0; left:0; right:0; background:#222; color:#fff; font-family:sans-serif; padding:4px; display:flex; gap:8px; z-index:10; }
+  #toolbar button { background:#444; border:0; color:#fff; padding:4px 8px; cursor:pointer; }
+  #toolbar button.selected { background:#888; }
+  #toolbar label { margin-left:8px; }
+  canvas { position:absolute; left:0; }
 </style>
+<div id="toolbar">
+  <div class="materials">
+    <button data-mat="2" class="selected">Water</button>
+    <button data-mat="1">Sand</button>
+    <button data-mat="3">Soil</button>
+    <button data-mat="5">Bomb</button>
+  </div>
+  <div class="modes">
+    <label><input type="radio" name="mode" value="place" checked>Place</label>
+    <label><input type="radio" name="mode" value="interact">Interact</label>
+  </div>
+</div>
 <canvas id="game"></canvas>
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d', { alpha:false });
+const toolbar = document.getElementById('toolbar');
 
 // Material constants
 const EMPTY=0, SAND=1, WATER=2, SOIL=3, GRASS=4, BOMB=5;
@@ -21,11 +38,17 @@ let simCols=0, simRows=0;
 let grid=[], isStatic=[];
 let bombs=[];
 let soilExposeTime={}, grassCoverTime={};
+let currentMaterial = WATER;
+let currentMode = 'place';
 
 function resize() {
   const ratio = window.devicePixelRatio || 1;
+  const uiHeight = toolbar.offsetHeight;
   width = window.innerWidth;
-  height = window.innerHeight;
+  height = window.innerHeight - uiHeight;
+  canvas.style.top = uiHeight + 'px';
+  canvas.style.width = width + 'px';
+  canvas.style.height = height + 'px';
   canvas.width = width * ratio;
   canvas.height = height * ratio;
   ctx.setTransform(ratio,0,0,ratio,0,0);
@@ -251,49 +274,98 @@ function loop(now) {
 requestAnimationFrame(loop);
 
 // Input handling
-let currentMaterial = WATER;
+function setMaterial(mat) {
+  currentMaterial = mat;
+  toolbar.querySelectorAll('button[data-mat]').forEach(b => {
+    b.classList.toggle('selected', parseInt(b.dataset.mat) === mat);
+  });
+}
+toolbar.querySelectorAll('button[data-mat]').forEach(btn => {
+  btn.addEventListener('click', () => setMaterial(parseInt(btn.dataset.mat)));
+});
+toolbar.querySelectorAll('input[name=mode]').forEach(radio => {
+  radio.addEventListener('change', () => { if (radio.checked) currentMode = radio.value; });
+});
 window.addEventListener('keydown', e => {
-  if (e.key === '1') currentMaterial = WATER;
-  if (e.key === '2') currentMaterial = SAND;
-  if (e.key === '3') currentMaterial = SOIL;
-  if (e.key === '4') currentMaterial = BOMB;
+  if (e.key === '1') setMaterial(WATER);
+  if (e.key === '2') setMaterial(SAND);
+  if (e.key === '3') setMaterial(SOIL);
+  if (e.key === '4') setMaterial(BOMB);
 });
 
-let spawnInterval;
-canvas.addEventListener('pointerdown', e => {
+setMaterial(currentMaterial);
+
+let pointerDown = false;
+let pointerX = 0, pointerY = 0;
+function updatePointer(e) {
   const rect = canvas.getBoundingClientRect();
-  const gridX = Math.floor((e.clientX - rect.left) / cellSize);
-  const gridY = Math.floor((e.clientY - rect.top) / cellSize);
-  function spawnParticle() {
-    if (gridY < 0 || gridY >= simRows || gridX < 0 || gridX >= simCols) return;
-    if (currentMaterial === SOIL) {
-      const r = 2;
-      for (let dy = -r; dy <= r; dy++) {
-        for (let dx = -r; dx <= r; dx++) {
-          if (dx*dx + dy*dy <= r*r) {
-            const x = gridX + dx, y = gridY + dy;
-            if (y >= 0 && y < simRows && x >= 0 && x < simCols && grid[y][x] === EMPTY) {
-              grid[y][x] = SOIL;
-              isStatic[y][x] = false;
-              soilExposeTime[`${x},${y}`] = 0;
-            }
+  pointerX = Math.floor((e.clientX - rect.left) / cellSize);
+  pointerY = Math.floor((e.clientY - rect.top) / cellSize);
+}
+
+function spawnAtPointer() {
+  const gridX = pointerX, gridY = pointerY;
+  if (gridY < 0 || gridY >= simRows || gridX < 0 || gridX >= simCols) return;
+  if (currentMode === 'interact') {
+    if (grid[gridY][gridX] !== EMPTY) {
+      grid[gridY][gridX] = EMPTY;
+      isStatic[gridY][gridX] = false;
+      delete soilExposeTime[`${gridX},${gridY}`];
+      delete grassCoverTime[`${gridX},${gridY}`];
+    }
+    return;
+  }
+  if (currentMaterial === SOIL) {
+    const r = 2;
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (dx*dx + dy*dy <= r*r) {
+          const x = gridX + dx, y = gridY + dy;
+          if (y >= 0 && y < simRows && x >= 0 && x < simCols && grid[y][x] === EMPTY) {
+            grid[y][x] = SOIL;
+            isStatic[y][x] = false;
+            soilExposeTime[`${x},${y}`] = 0;
           }
         }
       }
-    } else {
-      if (grid[gridY][gridX] === EMPTY) {
-        grid[gridY][gridX] = currentMaterial;
-        isStatic[gridY][gridX] = false;
-        if (currentMaterial === BOMB) {
-          bombs.push({x: gridX, y: gridY, fuse: 3});
+    }
+  } else if (currentMaterial === WATER) {
+    const r = 1;
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const x = gridX + dx, y = gridY + dy;
+        if (y >= 0 && y < simRows && x >= 0 && x < simCols && grid[y][x] === EMPTY) {
+          grid[y][x] = WATER;
+          isStatic[y][x] = false;
         }
       }
     }
+  } else {
+    if (grid[gridY][gridX] === EMPTY) {
+      grid[gridY][gridX] = currentMaterial;
+      isStatic[gridY][gridX] = false;
+      if (currentMaterial === BOMB) {
+        bombs.push({x: gridX, y: gridY, fuse: 3});
+      }
+    }
   }
-  spawnParticle();
+}
+
+let spawnInterval;
+canvas.addEventListener('pointerdown', e => {
+  pointerDown = true;
+  updatePointer(e);
+  spawnAtPointer();
   clearInterval(spawnInterval);
-  spawnInterval = setInterval(spawnParticle, 50);
+  const rate = currentMaterial === WATER && currentMode === 'place' ? 20 : 50;
+  spawnInterval = setInterval(spawnAtPointer, rate);
 });
-['pointerup','pointercancel','pointerout'].forEach(ev => canvas.addEventListener(ev, () => clearInterval(spawnInterval)));
+canvas.addEventListener('pointermove', e => {
+  if (pointerDown) updatePointer(e);
+});
+['pointerup','pointercancel','pointerout'].forEach(ev => canvas.addEventListener(ev, () => {
+  pointerDown = false;
+  clearInterval(spawnInterval);
+}));
 </script>
 </html>
