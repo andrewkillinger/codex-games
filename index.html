@@ -143,44 +143,38 @@ function updateParticles(){
           if (!moved) isStatic[y][x] = true;
         }
       } else if (cell === WATER){
-        const belowY = y+1;
-        const belowCell = belowY<simRows ? grid[belowY][x] : SOIL;
-        if (belowY<simRows && belowCell === EMPTY){
+        // fall straight down through empty space for faster flow
+        let ny = y;
+        while (ny+1 < simRows && grid[ny+1][x] === EMPTY) ny++;
+        if (ny !== y){
+          grid[ny][x] = WATER;
           grid[y][x] = EMPTY;
-          grid[belowY][x] = WATER;
-        } else {
-          const dirs = frame%2===0 ? [-1,1] : [1,-1];
-          let moved = false;
-          for (const dir of dirs){
-            let nx = x + dir;
-            while (nx>=0 && nx<simCols && grid[y][nx] === WATER) nx += dir;
-            if (nx<0 || nx>=simCols) continue;
-            const target = grid[y][nx];
-            const belowTarget = belowY<simRows ? grid[belowY][nx] : SOIL;
-            if (target === EMPTY){
-              if (belowY<simRows && belowTarget === EMPTY){
-                grid[belowY][nx] = WATER;
-              } else {
-                grid[y][nx] = WATER;
-              }
-              grid[y][x] = EMPTY;
-              moved = true;
-              break;
-            } else if (belowY<simRows && belowTarget === EMPTY){
-              grid[belowY][nx] = WATER;
+          continue;
+        }
+        const dirs = frame%2===0 ? [-1,1] : [1,-1];
+        let moved = false;
+        // search sideways for lowest drop point
+        for (const dir of dirs){
+          let nx = x + dir;
+          while (nx>=0 && nx<simCols && (grid[y][nx]===EMPTY || grid[y][nx]===WATER)){
+            if (y+1 < simRows && grid[y+1][nx] === EMPTY){
+              grid[y+1][nx] = WATER;
               grid[y][x] = EMPTY;
               moved = true;
               break;
             }
+            nx += dir;
           }
-          if (!moved){
-            for (const dx of dirs){
-              const nx = x+dx;
-              if (nx>=0 && nx<simCols && grid[y][nx] === EMPTY){
-                grid[y][nx] = WATER;
-                grid[y][x] = EMPTY;
-                break;
-              }
+          if (moved) break;
+        }
+        if (!moved){
+          // otherwise slide sideways into first empty cell
+          for (const dir of dirs){
+            const nx = x + dir;
+            if (nx>=0 && nx<simCols && grid[y][nx] === EMPTY){
+              grid[y][nx] = WATER;
+              grid[y][x] = EMPTY;
+              break;
             }
           }
         }
@@ -214,20 +208,78 @@ function updateSoilAndGrass(dt){
 }
 
 function drawBackground(dt){
-  dayTime = (dayTime + dt) % 300;
-  const progress = dayTime / 300;
-  const angle = progress * 2*Math.PI;
-  const sunHeight = Math.sin(angle);
-  const daylight = Math.max(0, sunHeight);
+  const total = 240; // 4 minutes
+  const phaseLen = total / 4;
+  dayTime = (dayTime + dt) % total;
+  const phase = Math.floor(dayTime / phaseLen);
+  const phaseT = (dayTime % phaseLen) / phaseLen;
+  const baseY = height * 0.7;
+  let daylight = 0;
+  currentSunX = width/2;
+
+  if (phase === 0){ // morning - sun rises
+    const sunRadius = 20;
+    const sunY = height + sunRadius - phaseT*(height + sunRadius*2);
+    if (sunY < baseY){
+      daylight = Math.min((baseY - sunY)/(baseY - height*0.5), 1);
+    }
+    if (sunY + sunRadius > 0 && sunY - sunRadius < height){
+      const grad = ctx.createRadialGradient(currentSunX, sunY, 0, currentSunX, sunY, sunRadius);
+      grad.addColorStop(0, '#fff4cc');
+      grad.addColorStop(1, '#ffd35c');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(currentSunX, sunY, sunRadius, 0, Math.PI*2);
+      ctx.fill();
+    }
+  } else if (phase === 1){ // afternoon - sun gone
+    daylight = 1;
+  } else if (phase === 2){ // evening - moon rises
+    const moonRadius = 15;
+    const moonY = height + moonRadius - phaseT*(height + moonRadius*2);
+    daylight = 1;
+    if (moonY < baseY){
+      daylight = Math.max(0, 1 - (baseY - moonY)/(baseY - height*0.5));
+    }
+    if (moonY + moonRadius > 0 && moonY - moonRadius < height){
+      const grad = ctx.createRadialGradient(currentSunX, moonY, 0, currentSunX, moonY, moonRadius);
+      grad.addColorStop(0, '#ffffff');
+      grad.addColorStop(1, '#ccddee');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(currentSunX, moonY, moonRadius, 0, Math.PI*2);
+      ctx.fill();
+    }
+  } else { // night
+    daylight = 0;
+  }
+
   currentDaylight = daylight;
   const nightLight = 1 - daylight;
 
   const dayTop = '#78a7ff';
   const dayBottom = '#b5dbff';
-  const nightTop = '#0b0d17';
-  const nightBottom = '#000000';
-  const skyTop = mixColor(nightTop, dayTop, daylight);
-  const skyBottom = mixColor(nightBottom, dayBottom, daylight);
+  const sunriseTop = '#ff9a9e';
+  const sunriseBottom = '#fecf70';
+  const nightTop = '#0e1624';
+  const nightBottom = '#05080f';
+  let skyTop, skyBottom;
+
+  if (phase === 0 && daylight < 1){
+    skyTop = mixColor(nightTop, sunriseTop, daylight);
+    skyBottom = mixColor(nightBottom, sunriseBottom, daylight);
+  } else if (phase === 2 && daylight < 1){
+    const d = 1 - daylight;
+    skyTop = mixColor(dayTop, sunriseTop, d);
+    skyBottom = mixColor(dayBottom, sunriseBottom, d);
+  } else if (daylight >= 1){
+    skyTop = dayTop;
+    skyBottom = dayBottom;
+  } else {
+    skyTop = nightTop;
+    skyBottom = nightBottom;
+  }
+
   const grad = ctx.createLinearGradient(0,0,0,height);
   grad.addColorStop(0, skyTop);
   grad.addColorStop(1, skyBottom);
@@ -242,50 +294,23 @@ function drawBackground(dt){
   }
   ctx.globalAlpha = 1;
 
-  // clouds
-  if (daylight > 0){
-    for (const c of clouds){
-      c.x += c.speed * dt;
-      if (c.x > width + 80) c.x = -80;
-      for (const p of c.puffs){
-        const cx = c.x + p.ox + p.w/2;
-        const cy = c.y + p.oy + p.h/2;
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.ellipse(cx, cy, p.w/2, p.h/2, 0, 0, Math.PI*2);
-        ctx.fill();
-        ctx.fillStyle = '#c0c0c0';
-        ctx.beginPath();
-        ctx.ellipse(cx, cy + p.h*0.25, p.w/2, p.h/4, 0, 0, Math.PI*2);
-        ctx.fill();
-      }
+  // clouds stay through day and night, tinted by daylight
+  for (const c of clouds){
+    c.x += c.speed * dt;
+    if (c.x > width + 80) c.x = -80;
+    for (const p of c.puffs){
+      const cx = c.x + p.ox + p.w/2;
+      const cy = c.y + p.oy + p.h/2;
+      const light = 0.5 + daylight*0.5;
+      ctx.fillStyle = mixColor('#555555', '#ffffff', light);
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, p.w/2, p.h/2, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.fillStyle = mixColor('#333333', '#c0c0c0', light);
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + p.h*0.25, p.w/2, p.h/4, 0, 0, Math.PI*2);
+      ctx.fill();
     }
-  }
-
-  // sun or moon
-  const sunX = progress * width;
-  currentSunX = sunX;
-  const baseY = height * 0.7;
-  const sunY = baseY - sunHeight * height * 0.5;
-  if (daylight > 0){
-    const sunRadius = 20;
-    const grad = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, sunRadius);
-    grad.addColorStop(0, '#fff4cc');
-    grad.addColorStop(1, '#ffd35c');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(sunX, sunY, sunRadius, 0, Math.PI*2);
-    ctx.fill();
-  } else {
-    const moonY = baseY - (-sunHeight) * height * 0.5;
-    const moonRadius = 15;
-    const grad = ctx.createRadialGradient(sunX, moonY, 0, sunX, moonY, moonRadius);
-    grad.addColorStop(0, '#ffffff');
-    grad.addColorStop(1, '#ccddee');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(sunX, moonY, moonRadius, 0, Math.PI*2);
-    ctx.fill();
   }
 }
 
@@ -294,7 +319,7 @@ function drawTerrain(){
     for (let x=0; x<simCols; x++){
       if (grid[y][x] === SOIL){
         const depth = y/simRows;
-        const topLight = 0.3 + 0.7*currentDaylight;
+        const topLight = 0.4 + 0.6*currentDaylight;
         const shade = Math.max(0, topLight - depth*0.8);
         ctx.fillStyle = mixColor('#1b0e06','#4e2b14', shade);
         ctx.fillRect(x*cellSize, y*cellSize, cellSize, cellSize);
