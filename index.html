@@ -150,7 +150,8 @@ function drawBackground(dt){
 
   const grad = ctx.createLinearGradient(0,0,0,height);
   grad.addColorStop(0, mixColor('#001030', '#5cc0ff', daylight));
-  grad.addColorStop(1, mixColor('#002', '#aeefff', daylight));
+  // use full 6-digit hex to avoid invalid color parsing
+  grad.addColorStop(1, mixColor('#000022', '#aeefff', daylight));
   ctx.fillStyle = grad;
   ctx.fillRect(0,0,width,height);
 
