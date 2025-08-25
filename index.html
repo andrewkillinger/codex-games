@@ -64,8 +64,8 @@ function initSky(){
     puffs: Array.from({length:3+Math.floor(Math.random()*3)}, () => ({
       ox: Math.random()*60-30,
       oy: Math.random()*20-10,
-      rx: 20+Math.random()*20,
-      ry: 10+Math.random()*10
+      w: 20+Math.random()*20,
+      h: 10+Math.random()*10
     }))
   }));
 }
@@ -115,9 +115,10 @@ function updateParticles(){
       if (cell === SOIL){
         if (isStatic[y][x]) continue;
         const belowY = y+1;
-        if (grid[belowY][x] === EMPTY){
+        const belowCell = grid[belowY][x];
+        if (belowCell === EMPTY || belowCell === WATER){
           grid[belowY][x] = SOIL;
-          grid[y][x] = EMPTY;
+          grid[y][x] = belowCell === WATER ? WATER : EMPTY;
           isStatic[belowY][x] = false;
           isStatic[y][x] = false;
           if (y>0) isStatic[y-1][x] = false;
@@ -126,34 +127,61 @@ function updateParticles(){
           let moved = false;
           for (const dx of dirs){
             const nx = x+dx;
-            if (nx>=0 && nx<simCols && grid[belowY][nx] === EMPTY){
-              grid[belowY][nx] = SOIL;
-              grid[y][x] = EMPTY;
-              isStatic[belowY][nx] = false;
-              isStatic[y][x] = false;
-              if (y>0) isStatic[y-1][x] = false;
-              moved = true;
-              break;
+            if (nx>=0 && nx<simCols){
+              const diag = grid[belowY][nx];
+              if (diag === EMPTY || diag === WATER){
+                grid[belowY][nx] = SOIL;
+                grid[y][x] = diag === WATER ? WATER : EMPTY;
+                isStatic[belowY][nx] = false;
+                isStatic[y][x] = false;
+                if (y>0) isStatic[y-1][x] = false;
+                moved = true;
+                break;
+              }
             }
           }
           if (!moved) isStatic[y][x] = true;
         }
       } else if (cell === WATER){
         const belowY = y+1;
-        if (belowY<simRows && grid[belowY][x] === EMPTY){
+        const belowCell = belowY<simRows ? grid[belowY][x] : SOIL;
+        if (belowY<simRows && (belowCell === EMPTY || belowCell === SOIL)){
+          if (belowCell === SOIL){
+            grid[y][x] = SOIL;
+          } else {
+            grid[y][x] = EMPTY;
+          }
           grid[belowY][x] = WATER;
-          grid[y][x] = EMPTY;
         } else {
           const dirs = frame%2===0 ? [-1,1] : [1,-1];
-          for (const dx of dirs){
-            const nx = x+dx;
-            if (nx>=0 && nx<simCols){
-              if (grid[y][nx] === EMPTY){
-                grid[y][nx] = WATER;
-                grid[y][x] = EMPTY;
-                break;
-              } else if (belowY<simRows && grid[belowY][nx] === EMPTY){
+          let moved = false;
+          for (const dir of dirs){
+            let nx = x + dir;
+            while (nx>=0 && nx<simCols && grid[y][nx] === WATER) nx += dir;
+            if (nx<0 || nx>=simCols) continue;
+            const target = grid[y][nx];
+            const belowTarget = belowY<simRows ? grid[belowY][nx] : SOIL;
+            if (target === EMPTY){
+              if (belowY<simRows && belowTarget === EMPTY){
                 grid[belowY][nx] = WATER;
+              } else {
+                grid[y][nx] = WATER;
+              }
+              grid[y][x] = EMPTY;
+              moved = true;
+              break;
+            } else if (belowY<simRows && belowTarget === EMPTY){
+              grid[belowY][nx] = WATER;
+              grid[y][x] = EMPTY;
+              moved = true;
+              break;
+            }
+          }
+          if (!moved){
+            for (const dx of dirs){
+              const nx = x+dx;
+              if (nx>=0 && nx<simCols && grid[y][nx] === EMPTY){
+                grid[y][nx] = WATER;
                 grid[y][x] = EMPTY;
                 break;
               }
@@ -192,15 +220,21 @@ function updateSoilAndGrass(dt){
 function drawBackground(dt){
   dayTime = (dayTime + dt) % 300;
   const progress = dayTime / 300;
-  const sunHeight = Math.sin(progress * 2*Math.PI);
+  const angle = progress * 2*Math.PI;
+  const sunHeight = Math.sin(angle);
   const daylight = Math.max(0, sunHeight);
   currentDaylight = daylight;
   const nightLight = 1 - daylight;
 
+  const dayTop = '#78a7ff';
+  const dayBottom = '#b5dbff';
+  const nightTop = '#0b0d17';
+  const nightBottom = '#000000';
+  const skyTop = mixColor(nightTop, dayTop, daylight);
+  const skyBottom = mixColor(nightBottom, dayBottom, daylight);
   const grad = ctx.createLinearGradient(0,0,0,height);
-  grad.addColorStop(0, mixColor('#001030', '#5cc0ff', daylight));
-  // use full 6-digit hex to avoid invalid color parsing
-  grad.addColorStop(1, mixColor('#000022', '#aeefff', daylight));
+  grad.addColorStop(0, skyTop);
+  grad.addColorStop(1, skyBottom);
   ctx.fillStyle = grad;
   ctx.fillRect(0,0,width,height);
 
@@ -214,19 +248,17 @@ function drawBackground(dt){
 
   // clouds
   if (daylight > 0){
-    ctx.fillStyle = 'rgba(255,255,255,0.8)';
-    ctx.shadowColor = 'rgba(255,255,255,0.8)';
-    ctx.shadowBlur = 8;
+    ctx.fillStyle = '#ffffff';
     for (const c of clouds){
       c.x += c.speed * dt;
       if (c.x > width + 80) c.x = -80;
-      ctx.beginPath();
       for (const p of c.puffs){
-        ctx.ellipse(c.x + p.ox, c.y + p.oy, p.rx, p.ry, 0, 0, Math.PI*2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(c.x + p.ox, c.y + p.oy, p.w, p.h);
+        ctx.fillStyle = '#c0c0c0';
+        ctx.fillRect(c.x + p.ox, c.y + p.oy + p.h - 4, p.w, 4);
       }
-      ctx.fill();
     }
-    ctx.shadowBlur = 0;
   }
 
   // sun or moon
@@ -236,25 +268,15 @@ function drawBackground(dt){
   const sunY = baseY - sunHeight * height * 0.5;
   if (daylight > 0){
     ctx.fillStyle = '#ffd35c';
-    ctx.shadowColor = '#ffd35c';
-    ctx.shadowBlur = 20;
-    ctx.beginPath();
-    ctx.arc(sunX, sunY, 20, 0, Math.PI*2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
+    ctx.fillRect(sunX-20, sunY-20, 40, 40);
   } else {
+    const moonY = baseY - (-sunHeight) * height * 0.5;
     ctx.fillStyle = '#ccddee';
-    ctx.shadowColor = '#ccddee';
-    ctx.shadowBlur = 15;
-    ctx.beginPath();
-    ctx.arc(sunX, baseY - (-sunHeight) * height * 0.5, 15, 0, Math.PI*2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
+    ctx.fillRect(sunX-15, moonY-15, 30, 30);
   }
 }
 
 function drawTerrain(){
-  const waterCells=[];
   for (let y=0; y<simRows; y++){
     for (let x=0; x<simCols; x++){
       if (grid[y][x] === SOIL){
@@ -278,38 +300,11 @@ function drawTerrain(){
         const gx=x*cellSize, gy=y*cellSize;
         const depth = y/simRows;
         const baseColor = mixColor('#003355','#4aa3ff',1-depth);
-        const dist = Math.abs((x+0.5)*cellSize - currentSunX)/width;
-        ctx.globalAlpha = 0.5 + (1-dist)*0.2*currentDaylight;
         ctx.fillStyle = baseColor;
         ctx.fillRect(gx, gy, cellSize, cellSize);
-        ctx.globalAlpha = 1;
-        waterCells.push({x, y});
       }
     }
   }
-  if (waterCells.length) drawWaterRays(waterCells);
-}
-
-function drawWaterRays(waterCells){
-  ctx.save();
-  ctx.beginPath();
-  for (const c of waterCells){
-    ctx.rect(c.x*cellSize, c.y*cellSize, cellSize, cellSize);
-  }
-  ctx.clip();
-  ctx.globalAlpha = 0.08*(0.2 + currentDaylight);
-  ctx.fillStyle = '#aeefff';
-  for (let i=-5; i<=5; i++){
-    const off=i*40;
-    ctx.beginPath();
-    ctx.moveTo(currentSunX+off,0);
-    ctx.lineTo(currentSunX+off+80,height);
-    ctx.lineTo(currentSunX+off+120,height);
-    ctx.lineTo(currentSunX+off+40,0);
-    ctx.closePath();
-    ctx.fill();
-  }
-  ctx.restore();
 }
 
 function draw(dt){
