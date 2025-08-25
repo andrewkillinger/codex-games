@@ -145,12 +145,8 @@ function updateParticles(){
       } else if (cell === WATER){
         const belowY = y+1;
         const belowCell = belowY<simRows ? grid[belowY][x] : SOIL;
-        if (belowY<simRows && (belowCell === EMPTY || belowCell === SOIL)){
-          if (belowCell === SOIL){
-            grid[y][x] = SOIL;
-          } else {
-            grid[y][x] = EMPTY;
-          }
+        if (belowY<simRows && belowCell === EMPTY){
+          grid[y][x] = EMPTY;
           grid[belowY][x] = WATER;
         } else {
           const dirs = frame%2===0 ? [-1,1] : [1,-1];
@@ -248,15 +244,20 @@ function drawBackground(dt){
 
   // clouds
   if (daylight > 0){
-    ctx.fillStyle = '#ffffff';
     for (const c of clouds){
       c.x += c.speed * dt;
       if (c.x > width + 80) c.x = -80;
       for (const p of c.puffs){
+        const cx = c.x + p.ox + p.w/2;
+        const cy = c.y + p.oy + p.h/2;
         ctx.fillStyle = '#ffffff';
-        ctx.fillRect(c.x + p.ox, c.y + p.oy, p.w, p.h);
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, p.w/2, p.h/2, 0, 0, Math.PI*2);
+        ctx.fill();
         ctx.fillStyle = '#c0c0c0';
-        ctx.fillRect(c.x + p.ox, c.y + p.oy + p.h - 4, p.w, 4);
+        ctx.beginPath();
+        ctx.ellipse(cx, cy + p.h*0.25, p.w/2, p.h/4, 0, 0, Math.PI*2);
+        ctx.fill();
       }
     }
   }
@@ -267,12 +268,24 @@ function drawBackground(dt){
   const baseY = height * 0.7;
   const sunY = baseY - sunHeight * height * 0.5;
   if (daylight > 0){
-    ctx.fillStyle = '#ffd35c';
-    ctx.fillRect(sunX-20, sunY-20, 40, 40);
+    const sunRadius = 20;
+    const grad = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, sunRadius);
+    grad.addColorStop(0, '#fff4cc');
+    grad.addColorStop(1, '#ffd35c');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(sunX, sunY, sunRadius, 0, Math.PI*2);
+    ctx.fill();
   } else {
     const moonY = baseY - (-sunHeight) * height * 0.5;
-    ctx.fillStyle = '#ccddee';
-    ctx.fillRect(sunX-15, moonY-15, 30, 30);
+    const moonRadius = 15;
+    const grad = ctx.createRadialGradient(sunX, moonY, 0, sunX, moonY, moonRadius);
+    grad.addColorStop(0, '#ffffff');
+    grad.addColorStop(1, '#ccddee');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(sunX, moonY, moonRadius, 0, Math.PI*2);
+    ctx.fill();
   }
 }
 
