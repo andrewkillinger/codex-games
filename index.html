@@ -15,13 +15,14 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d', { alpha:false });
 
 // material constants
-const EMPTY=0, SOIL=1, GRASS=2, WATER=3;
+const EMPTY=0, SOIL=1, GRASS=2, WATER=3, TREE=4, LEAVES=5, DYNAMITE=6;
 const cellSize = 4;
 
 let width=0, height=0;
 let simCols=0, simRows=0;
 let grid=[], isStatic=[];
 let soilExposeTime={};
+let trees=[], dynamites=[];
 
 let mode='place';
 
@@ -34,10 +35,21 @@ modeBtn.addEventListener("click", () => {
   modeBtn.textContent = "Mode: " + (mode==="place" ? "Place" : "Interact");
 });
 const matBtn = document.getElementById("matBtn");
+const materials = [SOIL, WATER, TREE, DYNAMITE];
+function materialLabel(mat){
+  switch(mat){
+    case SOIL: return "Soil";
+    case WATER: return "Water";
+    case TREE: return "Tree";
+    case DYNAMITE: return "Dynamite";
+  }
+}
 matBtn.addEventListener("click", () => {
-  currentMaterial = currentMaterial===SOIL ? WATER : SOIL;
-  matBtn.textContent = "Material: " + (currentMaterial===SOIL ? "Soil" : "Water");
+  const idx = materials.indexOf(currentMaterial);
+  currentMaterial = materials[(idx+1)%materials.length];
+  matBtn.textContent = "Material: " + materialLabel(currentMaterial);
 });
+matBtn.textContent = "Material: " + materialLabel(currentMaterial);
 let dayTime=0;
 let stars=[], clouds=[];
 let currentDaylight=1, currentSunX=0;
@@ -207,6 +219,71 @@ function updateSoilAndGrass(dt){
   }
 }
 
+function updateTrees(dt){
+  for (let i=trees.length-1; i>=0; i--){
+    const t = trees[i];
+    t.age += dt;
+    const targetHeight = Math.min(12, Math.floor(t.age/18)+1);
+    while (t.height < targetHeight){
+      const ny = t.baseY - t.height;
+      if (ny < 0 || grid[ny][t.x] !== EMPTY) break;
+      grid[ny][t.x] = TREE;
+      isStatic[ny][t.x] = true;
+      t.height++;
+      if (t.height > 2) addLeaves(t.x, ny);
+    }
+    if (grid[t.baseY][t.x] !== TREE) trees.splice(i,1);
+  }
+}
+
+function addLeaves(cx, cy){
+  const r = 2;
+  for (let dy=-r; dy<=r; dy++){
+    for (let dx=-r; dx<=r; dx++){
+      if (dx*dx + dy*dy <= r*r){
+        const x = cx+dx, y = cy+dy;
+        if (x>=0 && x<simCols && y>=0 && y<simRows && grid[y][x]===EMPTY){
+          grid[y][x] = LEAVES;
+          isStatic[y][x] = true;
+        }
+      }
+    }
+  }
+}
+
+function updateDynamites(dt){
+  for (let i=dynamites.length-1; i>=0; i--){
+    const d = dynamites[i];
+    d.timer -= dt;
+    if (d.timer <= 0){
+      explode(d);
+      dynamites.splice(i,1);
+    }
+  }
+}
+
+function explode(d){
+  const rDestroy = 8;
+  const rPush = 12;
+  for (let dy=-rPush; dy<=rPush; dy++){
+    for (let dx=-rPush; dx<=rPush; dx++){
+      const dist = Math.hypot(dx,dy);
+      const x = d.x + dx;
+      const y = d.y + dy;
+      if (x<0 || x>=simCols || y<0 || y>=simRows) continue;
+      if (dist <= rDestroy){
+        grid[y][x] = EMPTY;
+        isStatic[y][x] = false;
+        delete soilExposeTime[`${x},${y}`];
+      } else if (dist <= rPush){
+        const dirX = dx === 0 ? 0 : dx > 0 ? 1 : -1;
+        const dirY = dy === 0 ? 0 : dy > 0 ? 1 : -1;
+        moveCell(x, y, dirX, dirY);
+      }
+    }
+  }
+}
+
 function drawBackground(dt){
   const total = 240; // 4 minutes
   const phaseLen = total / 4;
@@ -251,7 +328,7 @@ function drawBackground(dt){
       ctx.fill();
     }
   } else { // night
-    daylight = 0;
+    daylight = 0.3;
   }
 
   currentDaylight = daylight;
@@ -261,8 +338,8 @@ function drawBackground(dt){
   const dayBottom = '#b5dbff';
   const sunriseTop = '#ff9a9e';
   const sunriseBottom = '#fecf70';
-  const nightTop = '#0e1624';
-  const nightBottom = '#05080f';
+  const nightTop = '#1a2638';
+  const nightBottom = '#0b111a';
   let skyTop, skyBottom;
 
   if (phase === 0 && daylight < 1){
@@ -340,14 +417,33 @@ function drawTerrain(){
         const baseColor = mixColor('#003355','#4aa3ff',1-depth);
         ctx.fillStyle = baseColor;
         ctx.fillRect(gx, gy, cellSize, cellSize);
+      } else if (grid[y][x] === TREE){
+        ctx.fillStyle = '#7b4b1e';
+        ctx.fillRect(x*cellSize, y*cellSize, cellSize, cellSize);
+      } else if (grid[y][x] === LEAVES){
+        ctx.fillStyle = '#2fa02f';
+        ctx.fillRect(x*cellSize, y*cellSize, cellSize, cellSize);
       }
     }
+  }
+}
+
+function drawDynamites(){
+  for (const d of dynamites){
+    const gx = d.x*cellSize;
+    const gy = d.y*cellSize;
+    ctx.fillStyle = '#ff0000';
+    ctx.fillRect(gx-cellSize, gy-cellSize*4, cellSize*2, cellSize*8);
+    ctx.fillStyle = '#ffff00';
+    const fuse = Math.max(0, d.timer/5);
+    ctx.fillRect(gx+cellSize/2, gy-cellSize*4-4, cellSize*fuse, 2);
   }
 }
 
 function draw(dt){
   drawBackground(dt);
   drawTerrain();
+  drawDynamites();
 }
 
 let last = performance.now();
@@ -356,6 +452,8 @@ function loop(now){
   last = now;
   updateParticles();
   updateSoilAndGrass(dt);
+  updateTrees(dt);
+  updateDynamites(dt);
   draw(dt);
   requestAnimationFrame(loop);
 }
@@ -373,19 +471,37 @@ function updatePointer(e){
   pointerY = Math.floor((e.clientY - rect.top)/cellSize);
 }
 
+function plantTree(x,y){
+  grid[y][x] = TREE;
+  isStatic[y][x] = true;
+  trees.push({x, baseY:y, age:0, height:1});
+}
+
+function placeDynamite(x,y){
+  dynamites.push({x,y,timer:5});
+}
+
 function modifyAtPointer(btn){
   const gridX = pointerX, gridY = pointerY;
   if (gridY<0 || gridY>=simRows || gridX<0 || gridX>=simCols) return;
   if (btn===0){
-    const r=2;
-    for (let dy=-r; dy<=r; dy++){
-      for (let dx=-r; dx<=r; dx++){
-        if (dx*dx+dy*dy <= r*r){
-          const x = gridX+dx, y = gridY+dy;
-          if (y>=0 && y<simRows && x>=0 && x<simCols && grid[y][x]===EMPTY){
-            grid[y][x] = currentMaterial;
-            isStatic[y][x] = false;
-            if (currentMaterial===SOIL) soilExposeTime[`${x},${y}`] = 0;
+    if (currentMaterial === TREE){
+      if (grid[gridY][gridX]===EMPTY && gridY+1<simRows && (grid[gridY+1][gridX]===SOIL || grid[gridY+1][gridX]===GRASS)){
+        plantTree(gridX, gridY);
+      }
+    } else if (currentMaterial === DYNAMITE){
+      placeDynamite(gridX, gridY);
+    } else {
+      const r=2;
+      for (let dy=-r; dy<=r; dy++){
+        for (let dx=-r; dx<=r; dx++){
+          if (dx*dx+dy*dy <= r*r){
+            const x = gridX+dx, y = gridY+dy;
+            if (y>=0 && y<simRows && x>=0 && x<simCols && grid[y][x]===EMPTY){
+              grid[y][x] = currentMaterial;
+              isStatic[y][x] = false;
+              if (currentMaterial===SOIL) soilExposeTime[`${x},${y}`] = 0;
+            }
           }
         }
       }
@@ -474,7 +590,8 @@ canvas.addEventListener('pointerdown', e => {
   if (mode==='place'){
     modifyAtPointer(pointerButton);
     clearInterval(spawnInterval);
-    spawnInterval = setInterval(()=>modifyAtPointer(pointerButton), 50);
+    if (currentMaterial!==TREE && currentMaterial!==DYNAMITE)
+      spawnInterval = setInterval(()=>modifyAtPointer(pointerButton), 50);
   } else if (mode==='interact') {
     dragX = pointerX;
     dragY = pointerY;
