@@ -4,7 +4,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Serene Soil</title>
 <style>
-  html, body { margin:0; height:100%; background:#000; touch-action:none; font-family:sans-serif; }
+  html, body { margin:0; height:100%; background:#000216; touch-action:none; font-family:sans-serif; }
   canvas { position:absolute; left:0; top:0; image-rendering:pixelated; }
   #toolbar { position:absolute; top:10px; left:50%; transform:translateX(-50%); z-index:10; background:rgba(0,0,0,0.5); padding:8px 12px; border-radius:8px; display:flex; gap:8px; }
   #toolbar button { background:rgba(255,255,255,0.1); color:#fff; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; }
@@ -19,7 +19,7 @@ const ctx = canvas.getContext('2d', { alpha:false });
 // material constants
 const EMPTY=0, SOIL=1, GRASS=2, WATER=3, TREE=4, LEAVES=5, DYNAMITE=6;
 // Smaller cell size for a denser, more detailed grid
-const cellSize = 8;
+const cellSize = 4;
 
 let width=0, height=0;
 let simCols=0, simRows=0;
@@ -260,6 +260,16 @@ function updateDynamites(dt){
   for (let i=dynamites.length-1; i>=0; i--){
     const d = dynamites[i];
     d.timer -= dt;
+    d.vy += 50 * dt;
+    let newY = d.y + d.vy * dt;
+    const bottom = Math.floor(newY + 2);
+    const gx = Math.floor(d.x);
+    if (bottom >= simRows || grid[bottom][gx] !== EMPTY){
+      d.y = bottom - 2;
+      d.vy = 0;
+    } else {
+      d.y = newY;
+    }
     if (d.timer <= 0){
       explode(d);
       dynamites.splice(i,1);
@@ -307,8 +317,8 @@ function drawBackground(dt){
     }
     if (sunY + sunRadius > 0 && sunY - sunRadius < height){
       const grad = ctx.createRadialGradient(currentSunX, sunY, 0, currentSunX, sunY, sunRadius);
-      grad.addColorStop(0, '#fff4cc');
-      grad.addColorStop(1, '#ffd35c');
+      grad.addColorStop(0, '#ff9aff');
+      grad.addColorStop(1, '#ffde59');
       ctx.fillStyle = grad;
       ctx.beginPath();
       ctx.arc(currentSunX, sunY, sunRadius, 0, Math.PI*2);
@@ -325,8 +335,8 @@ function drawBackground(dt){
     }
     if (moonY + moonRadius > 0 && moonY - moonRadius < height){
       const grad = ctx.createRadialGradient(currentSunX, moonY, 0, currentSunX, moonY, moonRadius);
-      grad.addColorStop(0, '#ffffff');
-      grad.addColorStop(1, '#ccddee');
+      grad.addColorStop(0, '#00f0ff');
+      grad.addColorStop(1, '#0088ff');
       ctx.fillStyle = grad;
       ctx.beginPath();
       ctx.arc(currentSunX, moonY, moonRadius, 0, Math.PI*2);
@@ -339,12 +349,12 @@ function drawBackground(dt){
   currentDaylight = daylight;
   const nightLight = 1 - daylight;
 
-  const dayTop = '#78a7ff';
-  const dayBottom = '#b5dbff';
-  const sunriseTop = '#ff9a9e';
-  const sunriseBottom = '#fecf70';
-  const nightTop = '#1a2638';
-  const nightBottom = '#0b111a';
+  const dayTop = '#3a0ca3';
+  const dayBottom = '#4361ee';
+  const sunriseTop = '#ff006e';
+  const sunriseBottom = '#ffbe0b';
+  const nightTop = '#240046';
+  const nightBottom = '#000000';
   let skyTop, skyBottom;
 
   if (phase === 0 && daylight < 1){
@@ -405,31 +415,31 @@ function drawTerrain(){
       const gx = x*cellSize, gy = y*cellSize;
       switch(val){
         case SOIL:
-          ctx.fillStyle = '#6b4f2e';
+          ctx.fillStyle = '#b000d4';
           ctx.fillRect(gx, gy, cellSize, cellSize);
-          ctx.fillStyle = '#5c4324';
+          ctx.fillStyle = '#7a0099';
           ctx.fillRect(gx, gy + cellSize*0.5, cellSize, cellSize*0.5);
-          ctx.fillStyle = '#7c5a34';
+          ctx.fillStyle = '#d14fff';
           ctx.fillRect(gx, gy, cellSize, cellSize*0.2);
           break;
         case GRASS:
-          ctx.fillStyle = '#3e8e41';
+          ctx.fillStyle = '#39ff14';
           ctx.fillRect(gx, gy, cellSize, cellSize);
           break;
         case WATER:
-          ctx.fillStyle = '#3f76b5';
+          ctx.fillStyle = '#00e5ff';
           ctx.fillRect(gx, gy, cellSize, cellSize);
-          ctx.fillStyle = '#5fa8dd';
+          ctx.fillStyle = '#7df9ff';
           ctx.fillRect(gx, gy, cellSize, cellSize*0.3);
-          ctx.fillStyle = '#2e5b91';
+          ctx.fillStyle = '#0090ff';
           ctx.fillRect(gx, gy + cellSize*0.7, cellSize, cellSize*0.3);
           break;
         case TREE:
-          ctx.fillStyle = '#8b5a2b';
+          ctx.fillStyle = '#ff8c00';
           ctx.fillRect(gx, gy, cellSize, cellSize);
           break;
         case LEAVES:
-          ctx.fillStyle = '#2e8b57';
+          ctx.fillStyle = '#32ff7e';
           ctx.fillRect(gx, gy, cellSize, cellSize);
           break;
       }
@@ -444,11 +454,11 @@ function drawDynamites(){
     ctx.shadowBlur = 8;
     ctx.fillStyle = '#ff073a';
     ctx.shadowColor = '#ff073a';
-    ctx.fillRect(gx-cellSize, gy-cellSize*4, cellSize*2, cellSize*8);
+    ctx.fillRect(gx-cellSize/2, gy-cellSize*2, cellSize, cellSize*4);
     ctx.fillStyle = '#ffff00';
     ctx.shadowColor = '#ffff00';
     const fuse = Math.max(0, d.timer/5);
-    ctx.fillRect(gx+cellSize/2, gy-cellSize*4-4, cellSize*fuse, 2);
+    ctx.fillRect(gx+cellSize/4, gy-cellSize*2-4, (cellSize/2)*fuse, 2);
     ctx.shadowBlur = 0;
   }
 }
@@ -491,7 +501,7 @@ function plantTree(x,y){
 }
 
 function placeDynamite(x,y){
-  dynamites.push({x,y,timer:5});
+  dynamites.push({x,y,vy:0,timer:5});
 }
 
 function modifyAtPointer(btn){
