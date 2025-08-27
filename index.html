@@ -17,7 +17,7 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d', { alpha:false });
 
 // material constants
-const EMPTY=0, SOIL=1, GRASS=2, WATER=3, TREE=4, LEAVES=5, DYNAMITE=6;
+const EMPTY=0, SOIL=1, GRASS=2, WATER=3, TREE=4, LEAVES=5, DYNAMITE=6, SEED=7;
 // Smaller cell size for a denser, more detailed grid
 const cellSize = 4;
 
@@ -69,20 +69,17 @@ function mixColor(c1,c2,t){
 
 function initSky(){
   stars = Array.from({length:100}, () => ({
-    x: Math.random()*width,
-    y: Math.random()*height*0.5,
-    size: Math.random()*2+1,
+    x: Math.floor(Math.random()*simCols),
+    y: Math.floor(Math.random()*simRows*0.5),
     alpha: Math.random()*0.5+0.5
   }));
   clouds = Array.from({length:5}, () => ({
-    x: Math.random()*width,
-    y: Math.random()*height*0.3,
-    speed: 10+Math.random()*20,
-    puffs: Array.from({length:3+Math.floor(Math.random()*3)}, () => ({
-      ox: Math.random()*60-30,
-      oy: Math.random()*20-10,
-      w: 20+Math.random()*20,
-      h: 10+Math.random()*10
+    x: Math.floor(Math.random()*simCols),
+    y: Math.floor(Math.random()*simRows*0.3),
+    speed: 1+Math.random()*2,
+    blocks: Array.from({length:5+Math.floor(Math.random()*5)}, () => ({
+      ox: Math.floor(Math.random()*6)-3,
+      oy: Math.floor(Math.random()*3)-1
     }))
   }));
 }
@@ -193,6 +190,21 @@ function updateParticles(){
               grid[y][x] = EMPTY;
               break;
             }
+          }
+        }
+      } else if (cell === SEED){
+        const belowY = y+1;
+        if (belowY < simRows && grid[belowY][x] === EMPTY){
+          grid[belowY][x] = SEED;
+          grid[y][x] = EMPTY;
+          isStatic[belowY][x] = false;
+          isStatic[y][x] = false;
+        } else {
+          if (belowY < simRows && (grid[belowY][x] === SOIL || grid[belowY][x] === GRASS) && (y===0 || grid[y-1][x] === EMPTY)){
+            plantTree(x,y);
+          } else {
+            grid[y][x] = EMPTY;
+            isStatic[y][x] = false;
           }
         }
       }
@@ -372,36 +384,30 @@ function drawBackground(dt){
     skyBottom = nightBottom;
   }
 
-  const grad = ctx.createLinearGradient(0,0,0,height);
-  grad.addColorStop(0, skyTop);
-  grad.addColorStop(1, skyBottom);
-  ctx.fillStyle = grad;
-  ctx.fillRect(0,0,width,height);
+  for (let y=0; y<height; y+=cellSize){
+    const t = y/height;
+    ctx.fillStyle = mixColor(skyTop, skyBottom, t);
+    ctx.fillRect(0, y, width, cellSize);
+  }
 
   // stars
   ctx.fillStyle = '#fff';
   for (const s of stars){
     ctx.globalAlpha = nightLight * s.alpha;
-    ctx.fillRect(s.x, s.y, s.size, s.size);
+    ctx.fillRect(s.x*cellSize, s.y*cellSize, cellSize, cellSize);
   }
   ctx.globalAlpha = 1;
 
-  // clouds stay through day and night, tinted by daylight
+  // pixel clouds
   for (const c of clouds){
     c.x += c.speed * dt;
-    if (c.x > width + 80) c.x = -80;
-    for (const p of c.puffs){
-      const cx = c.x + p.ox + p.w/2;
-      const cy = c.y + p.oy + p.h/2;
-      const light = 0.5 + daylight*0.5;
-      ctx.fillStyle = mixColor('#555555', '#ffffff', light);
-      ctx.beginPath();
-      ctx.ellipse(cx, cy, p.w/2, p.h/2, 0, 0, Math.PI*2);
-      ctx.fill();
-      ctx.fillStyle = mixColor('#333333', '#c0c0c0', light);
-      ctx.beginPath();
-      ctx.ellipse(cx, cy + p.h*0.25, p.w/2, p.h/4, 0, 0, Math.PI*2);
-      ctx.fill();
+    if (c.x > simCols + 20) c.x = -20;
+    const light = 0.5 + daylight*0.5;
+    ctx.fillStyle = mixColor('#555555', '#ffffff', light);
+    for (const b of c.blocks){
+      const bx = (c.x + b.ox) * cellSize;
+      const by = (c.y + b.oy) * cellSize;
+      ctx.fillRect(bx, by, cellSize, cellSize);
     }
   }
 }
@@ -433,6 +439,10 @@ function drawTerrain(){
           ctx.fillRect(gx, gy, cellSize, cellSize*0.3);
           ctx.fillStyle = '#0090ff';
           ctx.fillRect(gx, gy + cellSize*0.7, cellSize, cellSize*0.3);
+          break;
+        case SEED:
+          ctx.fillStyle = '#a07000';
+          ctx.fillRect(gx, gy, cellSize, cellSize);
           break;
         case TREE:
           ctx.fillStyle = '#ff8c00';
@@ -509,8 +519,9 @@ function modifyAtPointer(btn){
   if (gridY<0 || gridY>=simRows || gridX<0 || gridX>=simCols) return;
   if (btn===0){
     if (currentMaterial === TREE){
-      if (grid[gridY][gridX]===EMPTY && gridY+1<simRows && (grid[gridY+1][gridX]===SOIL || grid[gridY+1][gridX]===GRASS)){
-        plantTree(gridX, gridY);
+      if (grid[gridY][gridX]===EMPTY){
+        grid[gridY][gridX] = SEED;
+        isStatic[gridY][gridX] = false;
       }
     } else if (currentMaterial === DYNAMITE){
       placeDynamite(gridX, gridY);
