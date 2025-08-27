@@ -16,7 +16,8 @@ const ctx = canvas.getContext('2d', { alpha:false });
 
 // material constants
 const EMPTY=0, SOIL=1, GRASS=2, WATER=3, TREE=4, LEAVES=5, DYNAMITE=6;
-const cellSize = 4;
+// Larger cell size to create a blocky, Terraria-like grid
+const cellSize = 16;
 
 let width=0, height=0;
 let simCols=0, simRows=0;
@@ -392,51 +393,73 @@ function drawBackground(dt){
 }
 
 function drawTerrain(){
+  ctx.shadowBlur = 8;
   for (let y=0; y<simRows; y++){
     for (let x=0; x<simCols; x++){
-      if (grid[y][x] === SOIL){
-        const depth = y/simRows;
-        const topLight = 0.4 + 0.6*currentDaylight;
-        const shade = Math.max(0, topLight - depth*0.8);
-        ctx.fillStyle = mixColor('#1b0e06','#4e2b14', shade);
-        ctx.fillRect(x*cellSize, y*cellSize, cellSize, cellSize);
-      } else if (grid[y][x] === GRASS){
-        const gx=x*cellSize, gy=y*cellSize;
-        ctx.fillStyle = '#4e2b14';
-        ctx.fillRect(gx, gy, cellSize, cellSize);
-        ctx.fillStyle = '#2dd82d';
-        ctx.shadowColor = '#2dd82d';
-        ctx.shadowBlur = 6;
-        ctx.fillRect(gx, gy, cellSize, 2);
-        ctx.fillStyle = '#3cff3c';
-        ctx.fillRect(gx, gy, cellSize, 1);
-        ctx.shadowBlur = 0;
-      } else if (grid[y][x] === WATER){
-        const gx=x*cellSize, gy=y*cellSize;
-        const depth = y/simRows;
-        const baseColor = mixColor('#003355','#4aa3ff',1-depth);
-        ctx.fillStyle = baseColor;
-        ctx.fillRect(gx, gy, cellSize, cellSize);
-      } else if (grid[y][x] === TREE){
-        ctx.fillStyle = '#7b4b1e';
-        ctx.fillRect(x*cellSize, y*cellSize, cellSize, cellSize);
-      } else if (grid[y][x] === LEAVES){
-        ctx.fillStyle = '#2fa02f';
-        ctx.fillRect(x*cellSize, y*cellSize, cellSize, cellSize);
+      const val = grid[y][x];
+      if (val === EMPTY) continue;
+      const gx = x*cellSize, gy = y*cellSize;
+      switch(val){
+        case SOIL:
+          ctx.fillStyle = '#8a2be2';
+          ctx.shadowColor = '#8a2be2';
+          break;
+        case GRASS:
+          ctx.fillStyle = '#39ff14';
+          ctx.shadowColor = '#39ff14';
+          break;
+        case WATER:
+          ctx.fillStyle = '#00ffff';
+          ctx.shadowColor = '#00ffff';
+          break;
+        case TREE:
+          ctx.fillStyle = '#ff00ff';
+          ctx.shadowColor = '#ff00ff';
+          break;
+        case LEAVES:
+          ctx.fillStyle = '#00ff80';
+          ctx.shadowColor = '#00ff80';
+          break;
       }
+      ctx.fillRect(gx, gy, cellSize, cellSize);
     }
   }
+  ctx.shadowBlur = 0;
 }
 
 function drawDynamites(){
   for (const d of dynamites){
     const gx = d.x*cellSize;
     const gy = d.y*cellSize;
-    ctx.fillStyle = '#ff0000';
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = '#ff073a';
+    ctx.shadowColor = '#ff073a';
     ctx.fillRect(gx-cellSize, gy-cellSize*4, cellSize*2, cellSize*8);
     ctx.fillStyle = '#ffff00';
+    ctx.shadowColor = '#ffff00';
     const fuse = Math.max(0, d.timer/5);
     ctx.fillRect(gx+cellSize/2, gy-cellSize*4-4, cellSize*fuse, 2);
+    ctx.shadowBlur = 0;
+  }
+}
+
+// Overlay grid lines to emphasize the block-based world
+function drawGrid(){
+  ctx.strokeStyle = 'rgba(0,255,255,0.1)';
+  ctx.lineWidth = 1;
+  for (let x=0; x<=simCols; x++){
+    const px = x*cellSize;
+    ctx.beginPath();
+    ctx.moveTo(px, 0);
+    ctx.lineTo(px, height);
+    ctx.stroke();
+  }
+  for (let y=0; y<=simRows; y++){
+    const py = y*cellSize;
+    ctx.beginPath();
+    ctx.moveTo(0, py);
+    ctx.lineTo(width, py);
+    ctx.stroke();
   }
 }
 
@@ -444,6 +467,7 @@ function draw(dt){
   drawBackground(dt);
   drawTerrain();
   drawDynamites();
+  drawGrid();
 }
 
 let last = performance.now();
