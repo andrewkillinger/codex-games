@@ -4,9 +4,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Serene Soil</title>
 <style>
-  html, body { margin:0; height:100%; background:#000; touch-action:none; }
+  html, body { margin:0; height:100%; background:#000; touch-action:none; font-family:sans-serif; }
   canvas { position:absolute; left:0; top:0; image-rendering:pixelated; }
-  #toolbar { position:absolute; top:10px; left:50%; transform:translateX(-50%); z-index:10; }
+  #toolbar { position:absolute; top:10px; left:50%; transform:translateX(-50%); z-index:10; background:rgba(0,0,0,0.5); padding:8px 12px; border-radius:8px; display:flex; gap:8px; }
+  #toolbar button { background:rgba(255,255,255,0.1); color:#fff; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; }
+  #toolbar button:hover { background:rgba(255,255,255,0.2); }
 </style>
 <canvas id="game"></canvas>
 <div id="toolbar"><button id="modeBtn">Mode: Place</button> <button id="matBtn">Material: Soil</button></div>
@@ -16,8 +18,8 @@ const ctx = canvas.getContext('2d', { alpha:false });
 
 // material constants
 const EMPTY=0, SOIL=1, GRASS=2, WATER=3, TREE=4, LEAVES=5, DYNAMITE=6;
-// Larger cell size to create a blocky, Terraria-like grid
-const cellSize = 16;
+// Smaller cell size for a denser, more detailed grid
+const cellSize = 8;
 
 let width=0, height=0;
 let simCols=0, simRows=0;
@@ -31,12 +33,13 @@ let currentMaterial = SOIL;
 
 let frame=0;
 const modeBtn = document.getElementById("modeBtn");
+const matBtn = document.getElementById("matBtn");
+const materials = [SOIL, WATER, TREE, DYNAMITE];
 modeBtn.addEventListener("click", () => {
   mode = mode==="place" ? "interact" : "place";
   modeBtn.textContent = "Mode: " + (mode==="place" ? "Place" : "Interact");
+  matBtn.style.display = mode === "place" ? "inline-block" : "none";
 });
-const matBtn = document.getElementById("matBtn");
-const materials = [SOIL, WATER, TREE, DYNAMITE];
 function materialLabel(mat){
   switch(mat){
     case SOIL: return "Soil";
@@ -51,6 +54,7 @@ matBtn.addEventListener("click", () => {
   matBtn.textContent = "Material: " + materialLabel(currentMaterial);
 });
 matBtn.textContent = "Material: " + materialLabel(currentMaterial);
+matBtn.style.display = mode === "place" ? "inline-block" : "none";
 let dayTime=0;
 let stars=[], clouds=[];
 let currentDaylight=1, currentSunX=0;
@@ -224,7 +228,7 @@ function updateTrees(dt){
   for (let i=trees.length-1; i>=0; i--){
     const t = trees[i];
     t.age += dt;
-    const targetHeight = Math.min(12, Math.floor(t.age/18)+1);
+    const targetHeight = Math.min(25, Math.floor(t.age/36)+1);
     while (t.height < targetHeight){
       const ny = t.baseY - t.height;
       if (ny < 0 || grid[ny][t.x] !== EMPTY) break;
@@ -393,7 +397,7 @@ function drawBackground(dt){
 }
 
 function drawTerrain(){
-  ctx.shadowBlur = 8;
+  ctx.shadowBlur = 0;
   for (let y=0; y<simRows; y++){
     for (let x=0; x<simCols; x++){
       const val = grid[y][x];
@@ -401,30 +405,36 @@ function drawTerrain(){
       const gx = x*cellSize, gy = y*cellSize;
       switch(val){
         case SOIL:
-          ctx.fillStyle = '#8a2be2';
-          ctx.shadowColor = '#8a2be2';
+          ctx.fillStyle = '#6b4f2e';
+          ctx.fillRect(gx, gy, cellSize, cellSize);
+          ctx.fillStyle = '#5c4324';
+          ctx.fillRect(gx, gy + cellSize*0.5, cellSize, cellSize*0.5);
+          ctx.fillStyle = '#7c5a34';
+          ctx.fillRect(gx, gy, cellSize, cellSize*0.2);
           break;
         case GRASS:
-          ctx.fillStyle = '#39ff14';
-          ctx.shadowColor = '#39ff14';
+          ctx.fillStyle = '#3e8e41';
+          ctx.fillRect(gx, gy, cellSize, cellSize);
           break;
         case WATER:
-          ctx.fillStyle = '#00ffff';
-          ctx.shadowColor = '#00ffff';
+          ctx.fillStyle = '#3f76b5';
+          ctx.fillRect(gx, gy, cellSize, cellSize);
+          ctx.fillStyle = '#5fa8dd';
+          ctx.fillRect(gx, gy, cellSize, cellSize*0.3);
+          ctx.fillStyle = '#2e5b91';
+          ctx.fillRect(gx, gy + cellSize*0.7, cellSize, cellSize*0.3);
           break;
         case TREE:
-          ctx.fillStyle = '#ff00ff';
-          ctx.shadowColor = '#ff00ff';
+          ctx.fillStyle = '#8b5a2b';
+          ctx.fillRect(gx, gy, cellSize, cellSize);
           break;
         case LEAVES:
-          ctx.fillStyle = '#00ff80';
-          ctx.shadowColor = '#00ff80';
+          ctx.fillStyle = '#2e8b57';
+          ctx.fillRect(gx, gy, cellSize, cellSize);
           break;
       }
-      ctx.fillRect(gx, gy, cellSize, cellSize);
     }
   }
-  ctx.shadowBlur = 0;
 }
 
 function drawDynamites(){
@@ -443,31 +453,10 @@ function drawDynamites(){
   }
 }
 
-// Overlay grid lines to emphasize the block-based world
-function drawGrid(){
-  ctx.strokeStyle = 'rgba(0,255,255,0.1)';
-  ctx.lineWidth = 1;
-  for (let x=0; x<=simCols; x++){
-    const px = x*cellSize;
-    ctx.beginPath();
-    ctx.moveTo(px, 0);
-    ctx.lineTo(px, height);
-    ctx.stroke();
-  }
-  for (let y=0; y<=simRows; y++){
-    const py = y*cellSize;
-    ctx.beginPath();
-    ctx.moveTo(0, py);
-    ctx.lineTo(width, py);
-    ctx.stroke();
-  }
-}
-
 function draw(dt){
   drawBackground(dt);
   drawTerrain();
   drawDynamites();
-  drawGrid();
 }
 
 let last = performance.now();
