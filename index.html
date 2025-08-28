@@ -6,18 +6,24 @@
 <style>
   html, body { margin:0; height:100%; background:#000216; touch-action:none; font-family:sans-serif; }
   canvas { position:absolute; left:0; top:0; image-rendering:pixelated; }
-  #toolbar { position:absolute; top:10px; left:50%; transform:translateX(-50%); z-index:10; background:rgba(0,0,0,0.5); padding:8px 12px; border-radius:8px; display:flex; gap:8px; }
-  #toolbar button { background:rgba(255,255,255,0.1); color:#fff; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; }
+  #toolbar { position:absolute; top:10px; left:50%; transform:translateX(-50%); z-index:10; background:rgba(0,0,0,0.5); padding:8px 12px; border-radius:8px; display:flex; gap:8px; align-items:center; }
+  #toolbar button { width:32px; height:32px; background:rgba(255,255,255,0.1); color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:20px; display:flex; align-items:center; justify-content:center; }
   #toolbar button:hover { background:rgba(255,255,255,0.2); }
+  #materials { display:flex; gap:4px; }
+  #materials button.selected { outline:2px solid #fff; }
 </style>
 <canvas id="game"></canvas>
-<div id="toolbar"><button id="modeBtn">Mode: Place</button> <button id="matBtn">Material: Soil</button></div>
+<div id="toolbar">
+  <button id="modeBtn" title="Toggle place/interact">🛠️</button>
+  <div id="materials"></div>
+  <button id="bombBtn" title="Atomic Bomb">☢️</button>
+</div>
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d', { alpha:false });
 
 // material constants
-const EMPTY=0, SOIL=1, GRASS=2, WATER=3, TREE=4, LEAVES=5, DYNAMITE=6, SEED=7, GOPHER=8, FIREWORK=9;
+const EMPTY=0, SOIL=1, GRASS=2, WATER=3, TREE=4, LEAVES=5, DYNAMITE=6, SEED=7, GOPHER=8, FIREWORK=9, WALL=10;
 // Smaller cell size for a denser, more detailed grid
 const cellSize = 4;
 
@@ -25,38 +31,56 @@ let width=0, height=0;
 let simCols=0, simRows=0;
 let grid=[], isStatic=[];
 let soilExposeTime={};
-let trees=[], dynamites=[], gophers=[], fireworks=[], fireworkParts=[];
+let trees=[], dynamites=[], gophers=[], fireworks=[], fireworkParts=[], bombParticles=[];
 
 let mode='place';
-
 let currentMaterial = SOIL;
-
 let frame=0;
 const modeBtn = document.getElementById("modeBtn");
-const matBtn = document.getElementById("matBtn");
-const materials = [SOIL, WATER, TREE, DYNAMITE, GOPHER, FIREWORK];
+const materialsDiv = document.getElementById("materials");
+const bombBtn = document.getElementById("bombBtn");
+const materials = [SOIL, WATER, TREE, WALL, DYNAMITE, GOPHER, FIREWORK];
+const materialIcons = {
+  [SOIL]: '🟫',
+  [WATER]: '💧',
+  [TREE]: '🌳',
+  [WALL]: '🧱',
+  [DYNAMITE]: '🧨',
+  [GOPHER]: '🐹',
+  [FIREWORK]: '🎆'
+};
+const materialButtons = [];
+for (const mat of materials){
+  const btn = document.createElement('button');
+  btn.textContent = materialIcons[mat];
+  btn.dataset.mat = mat;
+  btn.addEventListener('click', () => {
+    currentMaterial = mat;
+    updateMaterialSelection();
+  });
+  materialsDiv.appendChild(btn);
+  materialButtons.push(btn);
+}
+function updateMaterialSelection(){
+  materialButtons.forEach(b => b.classList.toggle('selected', Number(b.dataset.mat)===currentMaterial));
+}
+updateMaterialSelection();
+function updateModeButton(){
+  modeBtn.textContent = mode==='place' ? '🛠️' : '✋';
+}
 modeBtn.addEventListener("click", () => {
   mode = mode==="place" ? "interact" : "place";
-  modeBtn.textContent = "Mode: " + (mode==="place" ? "Place" : "Interact");
-  matBtn.style.display = mode === "place" ? "inline-block" : "none";
+  updateModeButton();
 });
-function materialLabel(mat){
-  switch(mat){
-    case SOIL: return "Soil";
-    case WATER: return "Water";
-    case TREE: return "Tree";
-    case DYNAMITE: return "Dynamite";
-    case GOPHER: return "Gopher";
-    case FIREWORK: return "Firework";
-  }
-}
-matBtn.addEventListener("click", () => {
-  const idx = materials.indexOf(currentMaterial);
-  currentMaterial = materials[(idx+1)%materials.length];
-  matBtn.textContent = "Material: " + materialLabel(currentMaterial);
+updateModeButton();
+let bombReady=true;
+bombBtn.addEventListener('click', () => {
+  if (!bombReady) return;
+  triggerAtomicBomb();
+  bombReady=false;
+  bombBtn.disabled=true;
+  setTimeout(()=>{bombReady=true; bombBtn.disabled=false;},10000);
 });
-matBtn.textContent = "Material: " + materialLabel(currentMaterial);
-matBtn.style.display = mode === "place" ? "inline-block" : "none";
 let dayTime=0;
 let stars=[], clouds=[];
 let currentDaylight=1, currentSunX=0;
@@ -119,6 +143,55 @@ function resize(){
 }
 addEventListener('resize', resize, {passive:true});
 resize();
+
+function triggerAtomicBomb(){
+  for (let y=0; y<simRows; y++){
+    for (let x=0; x<simCols; x++){
+      grid[y][x]=EMPTY;
+      isStatic[y][x]=false;
+    }
+  }
+  soilExposeTime={};
+  trees=[]; dynamites=[]; gophers=[]; fireworks=[]; fireworkParts=[];
+  spawnMushroomCloud();
+}
+
+function spawnMushroomCloud(){
+  bombParticles=[];
+  const cx=simCols/2;
+  const baseY=simRows*0.6;
+  for (let i=0;i<500;i++){
+    let x,y;
+    if (Math.random()<0.4){
+      x=cx+(Math.random()*10-5);
+      y=baseY-Math.random()*20;
+    }else{
+      const angle=Math.random()*Math.PI;
+      const radius=20+Math.random()*10;
+      x=cx+radius*Math.cos(angle);
+      y=baseY-20+radius*Math.sin(angle);
+    }
+    bombParticles.push({x,y,vx:Math.random()*20-10,vy:-60-Math.random()*20,life:0,maxLife:2+Math.random()*2,color:Math.random()<0.5?'#ffb347':'#dddddd'});
+  }
+}
+
+function updateBombParticles(dt){
+  for (let i=bombParticles.length-1;i>=0;i--){
+    const p=bombParticles[i];
+    p.x+=p.vx*dt;
+    p.y+=p.vy*dt;
+    p.vy+=20*dt;
+    p.life+=dt;
+    if (p.life>p.maxLife) bombParticles.splice(i,1);
+  }
+}
+
+function drawBombParticles(){
+  for (const p of bombParticles){
+    ctx.fillStyle=p.color;
+    ctx.fillRect(p.x*cellSize, p.y*cellSize, cellSize, cellSize);
+  }
+}
 
 function updateParticles(){
   frame++;
@@ -500,6 +573,10 @@ function drawTerrain(){
           ctx.fillStyle = '#0090ff';
           ctx.fillRect(gx, gy + cellSize*0.7, cellSize, cellSize*0.3);
           break;
+        case WALL:
+          ctx.fillStyle = '#888888';
+          ctx.fillRect(gx, gy, cellSize, cellSize);
+          break;
         case SEED:
           ctx.fillStyle = '#a07000';
           ctx.fillRect(gx, gy, cellSize, cellSize);
@@ -562,6 +639,7 @@ function draw(dt){
   drawDynamites();
   drawGophers();
   drawFireworks();
+  drawBombParticles();
 }
 
 let last = performance.now();
@@ -574,6 +652,7 @@ function loop(now){
   updateDynamites(dt);
   updateGophers(dt);
   updateFireworks(dt);
+  updateBombParticles(dt);
   draw(dt);
   requestAnimationFrame(loop);
 }
@@ -637,7 +716,7 @@ function modifyAtPointer(btn){
             const x = gridX+dx, y = gridY+dy;
             if (y>=0 && y<simRows && x>=0 && x<simCols && grid[y][x]===EMPTY){
               grid[y][x] = currentMaterial;
-              isStatic[y][x] = false;
+              isStatic[y][x] = currentMaterial===WALL;
               if (currentMaterial===SOIL) soilExposeTime[`${x},${y}`] = 0;
             }
           }
@@ -656,6 +735,7 @@ function modifyAtPointer(btn){
 function pushCell(x,y,dx,dy){
   if (x<0||x>=simCols||y<0||y>=simRows) return false;
   if (grid[y][x]===EMPTY) return true;
+  if (grid[y][x]===WALL) return false;
   const nx=x+dx, ny=y+dy;
   if (!pushCell(nx,ny,dx,dy)) return false;
   grid[ny][nx]=grid[y][x];
