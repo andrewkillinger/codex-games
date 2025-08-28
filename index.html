@@ -17,7 +17,7 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d', { alpha:false });
 
 // material constants
-const EMPTY=0, SOIL=1, GRASS=2, WATER=3, TREE=4, LEAVES=5, DYNAMITE=6, SEED=7;
+const EMPTY=0, SOIL=1, GRASS=2, WATER=3, TREE=4, LEAVES=5, DYNAMITE=6, SEED=7, GOPHER=8, FIREWORK=9;
 // Smaller cell size for a denser, more detailed grid
 const cellSize = 4;
 
@@ -25,7 +25,7 @@ let width=0, height=0;
 let simCols=0, simRows=0;
 let grid=[], isStatic=[];
 let soilExposeTime={};
-let trees=[], dynamites=[];
+let trees=[], dynamites=[], gophers=[], fireworks=[], fireworkParts=[];
 
 let mode='place';
 
@@ -34,7 +34,7 @@ let currentMaterial = SOIL;
 let frame=0;
 const modeBtn = document.getElementById("modeBtn");
 const matBtn = document.getElementById("matBtn");
-const materials = [SOIL, WATER, TREE, DYNAMITE];
+const materials = [SOIL, WATER, TREE, DYNAMITE, GOPHER, FIREWORK];
 modeBtn.addEventListener("click", () => {
   mode = mode==="place" ? "interact" : "place";
   modeBtn.textContent = "Mode: " + (mode==="place" ? "Place" : "Interact");
@@ -46,6 +46,8 @@ function materialLabel(mat){
     case WATER: return "Water";
     case TREE: return "Tree";
     case DYNAMITE: return "Dynamite";
+    case GOPHER: return "Gopher";
+    case FIREWORK: return "Firework";
   }
 }
 matBtn.addEventListener("click", () => {
@@ -276,7 +278,8 @@ function updateDynamites(dt){
     let newY = d.y + d.vy * dt;
     const bottom = Math.floor(newY + 2);
     const gx = Math.floor(d.x);
-    if (bottom >= simRows || grid[bottom][gx] !== EMPTY){
+    const below = bottom < simRows ? grid[bottom][gx] : EMPTY;
+    if (bottom >= simRows || (below !== EMPTY && below !== WATER)){
       d.y = bottom - 2;
       d.vy = 0;
     } else {
@@ -308,6 +311,63 @@ function explode(d){
         moveCell(x, y, dirX, dirY);
       }
     }
+  }
+}
+
+function updateGophers(dt){
+  const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+  for (const g of gophers){
+    g.move -= dt;
+    if (g.move <= 0){
+      g.move = 0.2 + Math.random()*0.3;
+      const dir = dirs[Math.floor(Math.random()*dirs.length)];
+      const nx = g.x + dir[0];
+      const ny = g.y + dir[1];
+      if (nx>=0 && nx<simCols && ny>=0 && ny<simRows){
+        if (grid[ny][nx] === SOIL || grid[ny][nx] === GRASS){
+          grid[ny][nx] = EMPTY;
+          isStatic[ny][nx] = false;
+          delete soilExposeTime[`${nx},${ny}`];
+        }
+        g.x = nx;
+        g.y = ny;
+      }
+    }
+  }
+}
+
+function explodeFirework(f){
+  for (let i=0; i<30; i++){
+    const angle = Math.random()*Math.PI*2;
+    const speed = 20 + Math.random()*40;
+    fireworkParts.push({
+      x:f.x,
+      y:f.y,
+      vx:Math.cos(angle)*speed,
+      vy:Math.sin(angle)*speed,
+      life:1,
+      color:f.color
+    });
+  }
+}
+
+function updateFireworks(dt){
+  for (let i=fireworks.length-1; i>=0; i--){
+    const f = fireworks[i];
+    f.vy += 40*dt;
+    f.y += f.vy*dt;
+    if (f.vy >= 0){
+      explodeFirework(f);
+      fireworks.splice(i,1);
+    }
+  }
+  for (let i=fireworkParts.length-1; i>=0; i--){
+    const p = fireworkParts[i];
+    p.vy += 40*dt;
+    p.x += p.vx*dt;
+    p.y += p.vy*dt;
+    p.life -= dt;
+    if (p.life <= 0) fireworkParts.splice(i,1);
   }
 }
 
@@ -473,10 +533,35 @@ function drawDynamites(){
   }
 }
 
+function drawGophers(){
+  ctx.fillStyle = '#a0522d';
+  for (const g of gophers){
+    ctx.fillRect(g.x*cellSize, g.y*cellSize, cellSize, cellSize);
+  }
+}
+
+function drawFireworks(){
+  ctx.shadowBlur = 0;
+  for (const f of fireworks){
+    const gx = f.x*cellSize;
+    const gy = f.y*cellSize;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(gx-cellSize/2, gy-cellSize*2, cellSize, cellSize*2);
+  }
+  for (const p of fireworkParts){
+    const gx = p.x*cellSize;
+    const gy = p.y*cellSize;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(gx, gy, cellSize, cellSize);
+  }
+}
+
 function draw(dt){
   drawBackground(dt);
   drawTerrain();
   drawDynamites();
+  drawGophers();
+  drawFireworks();
 }
 
 let last = performance.now();
@@ -487,6 +572,8 @@ function loop(now){
   updateSoilAndGrass(dt);
   updateTrees(dt);
   updateDynamites(dt);
+  updateGophers(dt);
+  updateFireworks(dt);
   draw(dt);
   requestAnimationFrame(loop);
 }
@@ -514,6 +601,19 @@ function placeDynamite(x,y){
   dynamites.push({x,y,vy:0,timer:5});
 }
 
+function placeGopher(x,y){
+  gophers.push({x,y,move:0});
+  if (grid[y][x] !== EMPTY){
+    grid[y][x] = EMPTY;
+    isStatic[y][x] = false;
+    delete soilExposeTime[`${x},${y}`];
+  }
+}
+
+function placeFirework(x,y){
+  fireworks.push({x,y,vy:-80-20*Math.random(),color:`hsl(${Math.random()*360},100%,60%)`});
+}
+
 function modifyAtPointer(btn){
   const gridX = pointerX, gridY = pointerY;
   if (gridY<0 || gridY>=simRows || gridX<0 || gridX>=simCols) return;
@@ -525,6 +625,10 @@ function modifyAtPointer(btn){
       }
     } else if (currentMaterial === DYNAMITE){
       placeDynamite(gridX, gridY);
+    } else if (currentMaterial === GOPHER){
+      placeGopher(gridX, gridY);
+    } else if (currentMaterial === FIREWORK){
+      placeFirework(gridX, gridY);
     } else {
       const r=2;
       for (let dy=-r; dy<=r; dy++){
@@ -624,7 +728,7 @@ canvas.addEventListener('pointerdown', e => {
   if (mode==='place'){
     modifyAtPointer(pointerButton);
     clearInterval(spawnInterval);
-    if (currentMaterial!==TREE && currentMaterial!==DYNAMITE)
+    if (currentMaterial!==TREE && currentMaterial!==DYNAMITE && currentMaterial!==GOPHER && currentMaterial!==FIREWORK)
       spawnInterval = setInterval(()=>modifyAtPointer(pointerButton), 50);
   } else if (mode==='interact') {
     dragX = pointerX;
