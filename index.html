@@ -99,13 +99,13 @@ function initSky(){
     y: Math.floor(Math.random()*simRows*0.5),
     alpha: Math.random()*0.5+0.5
   }));
-  clouds = Array.from({length:5}, () => ({
+  clouds = Array.from({length:6}, () => ({
     x: Math.floor(Math.random()*simCols),
     y: Math.floor(Math.random()*simRows*0.3),
-    speed: 1+Math.random()*2,
-    blocks: Array.from({length:5+Math.floor(Math.random()*5)}, () => ({
-      ox: Math.floor(Math.random()*6)-3,
-      oy: Math.floor(Math.random()*3)-1
+    speed: 0.5 + Math.random()*1.5,
+    blocks: Array.from({length:20+Math.floor(Math.random()*20)}, () => ({
+      ox: Math.floor(Math.random()*12)-6,
+      oy: Math.floor(Math.random()*6)-3
     }))
   }));
 }
@@ -446,80 +446,59 @@ function updateFireworks(dt){
 
 function drawBackground(dt){
   const total = 240; // 4 minutes
-  const phaseLen = total / 4;
   dayTime = (dayTime + dt) % total;
-  const phase = Math.floor(dayTime / phaseLen);
-  const phaseT = (dayTime % phaseLen) / phaseLen;
+  const progress = dayTime / total;
+  const angle = progress * 2 * Math.PI - Math.PI / 2;
   const baseY = height * 0.7;
-  let daylight = 0;
-  currentSunX = width/2;
+  currentSunX = width / 2;
 
-  if (phase === 0){ // morning - sun rises
-    const sunRadius = 20;
-    const sunY = height + sunRadius - phaseT*(height + sunRadius*2);
-    if (sunY < baseY){
-      daylight = Math.min((baseY - sunY)/(baseY - height*0.5), 1);
-    }
-    if (sunY + sunRadius > 0 && sunY - sunRadius < height){
-      const grad = ctx.createRadialGradient(currentSunX, sunY, 0, currentSunX, sunY, sunRadius);
-      grad.addColorStop(0, '#ff9aff');
-      grad.addColorStop(1, '#ffde59');
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(currentSunX, sunY, sunRadius, 0, Math.PI*2);
-      ctx.fill();
-    }
-  } else if (phase === 1){ // afternoon - sun gone
-    daylight = 1;
-  } else if (phase === 2){ // evening - moon rises
-    const moonRadius = 15;
-    const moonY = height + moonRadius - phaseT*(height + moonRadius*2);
-    daylight = 1;
-    if (moonY < baseY){
-      daylight = Math.max(0, 1 - (baseY - moonY)/(baseY - height*0.5));
-    }
-    if (moonY + moonRadius > 0 && moonY - moonRadius < height){
-      const grad = ctx.createRadialGradient(currentSunX, moonY, 0, currentSunX, moonY, moonRadius);
-      grad.addColorStop(0, '#00f0ff');
-      grad.addColorStop(1, '#0088ff');
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(currentSunX, moonY, moonRadius, 0, Math.PI*2);
-      ctx.fill();
-    }
-  } else { // night
-    daylight = 0.3;
-  }
+  const sunRadius = 20;
+  const sunY = baseY - Math.sin(angle) * (baseY + sunRadius);
+  const moonRadius = 15;
+  const moonY = baseY - Math.sin(angle + Math.PI) * (baseY + moonRadius);
 
+  const daylight = 0.5 + Math.sin(angle) * 0.5;
   currentDaylight = daylight;
   const nightLight = 1 - daylight;
 
-  const dayTop = '#3a0ca3';
-  const dayBottom = '#4361ee';
-  const sunriseTop = '#ff006e';
-  const sunriseBottom = '#ffbe0b';
-  const nightTop = '#240046';
-  const nightBottom = '#000000';
-  let skyTop, skyBottom;
-
-  if (phase === 0 && daylight < 1){
-    skyTop = mixColor(nightTop, sunriseTop, daylight);
-    skyBottom = mixColor(nightBottom, sunriseBottom, daylight);
-  } else if (phase === 2 && daylight < 1){
-    const d = 1 - daylight;
-    skyTop = mixColor(dayTop, sunriseTop, d);
-    skyBottom = mixColor(dayBottom, sunriseBottom, d);
-  } else if (daylight >= 1){
-    skyTop = dayTop;
-    skyBottom = dayBottom;
-  } else {
-    skyTop = nightTop;
-    skyBottom = nightBottom;
+  if (daylight > 0){
+    const grad = ctx.createRadialGradient(currentSunX, sunY, 0, currentSunX, sunY, sunRadius);
+    grad.addColorStop(0, '#ff9aff');
+    grad.addColorStop(1, '#ffde59');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(currentSunX, sunY, sunRadius, 0, Math.PI * 2);
+    ctx.fill();
   }
 
-  for (let y=0; y<height; y+=cellSize){
-    const t = y/height;
-    ctx.fillStyle = mixColor(skyTop, skyBottom, t);
+  if (daylight < 0.4){
+    const grad = ctx.createRadialGradient(currentSunX, moonY, 0, currentSunX, moonY, moonRadius);
+    grad.addColorStop(0, '#00f0ff');
+    grad.addColorStop(1, '#0088ff');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(currentSunX, moonY, moonRadius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const gradients = [
+    { top: '#240046', bottom: '#000000' },
+    { top: '#ff006e', bottom: '#ffbe0b' },
+    { top: '#3a0ca3', bottom: '#4361ee' },
+    { top: '#ff006e', bottom: '#ffbe0b' },
+    { top: '#240046', bottom: '#000000' }
+  ];
+  const seg = progress * (gradients.length - 1);
+  const idx = Math.floor(seg);
+  const t = seg - idx;
+  const g1 = gradients[idx];
+  const g2 = gradients[idx + 1];
+  const skyTop = mixColor(g1.top, g2.top, t);
+  const skyBottom = mixColor(g1.bottom, g2.bottom, t);
+
+  for (let y = 0; y < height; y += cellSize) {
+    const ty = y / height;
+    ctx.fillStyle = mixColor(skyTop, skyBottom, ty);
     ctx.fillRect(0, y, width, cellSize);
   }
 
@@ -527,7 +506,7 @@ function drawBackground(dt){
   ctx.fillStyle = '#fff';
   for (const s of stars){
     ctx.globalAlpha = nightLight * s.alpha;
-    ctx.fillRect(s.x*cellSize, s.y*cellSize, cellSize, cellSize);
+    ctx.fillRect(s.x * cellSize, s.y * cellSize, cellSize, cellSize);
   }
   ctx.globalAlpha = 1;
 
@@ -535,7 +514,7 @@ function drawBackground(dt){
   for (const c of clouds){
     c.x += c.speed * dt;
     if (c.x > simCols + 20) c.x = -20;
-    const light = 0.5 + daylight*0.5;
+    const light = 0.5 + daylight * 0.5;
     ctx.fillStyle = mixColor('#555555', '#ffffff', light);
     for (const b of c.blocks){
       const bx = (c.x + b.ox) * cellSize;
