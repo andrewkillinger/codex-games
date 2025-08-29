@@ -1,3 +1,4 @@
+import Phaser from 'phaser';
 import MainScene from './MainScene.js';
 
 const config = {
