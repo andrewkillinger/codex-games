@@ -1,60 +1,60 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Gravity Sandbox</title>
-    <style>
-      body {
-        margin: 0;
-        background: #000;
-        color: #0ff;
-        font-family: monospace;
-      }
-      #menu {
-        display: flex;
-        gap: 4px;
-        padding: 4px;
-        background: rgba(0, 0, 0, 0.7);
-        align-items: center;
-      }
-      #palette {
-        display: none;
-        gap: 4px;
-      }
-      #palette.active {
-        display: flex;
-      }
-      button {
-        background: #111;
-        color: #0ff;
-        border: 2px solid #0ff;
-        padding: 4px 8px;
-        font-family: inherit;
-        cursor: pointer;
-      }
-      canvas {
-        image-rendering: pixelated;
-        filter: contrast(1.2) brightness(1.1);
-        display: block;
-      }
-      body::after {
-        content: '';
-        pointer-events: none;
-        position: fixed;
-        top: 0; left: 0; right: 0; bottom: 0;
-        background: linear-gradient(rgba(255,255,255,0.05) 50%, rgba(0,0,0,0.05) 50%);
-        background-size: 100% 2px;
-        mix-blend-mode: overlay;
-      }
-    </style>
-  </head>
-  <body>
-    <div id="menu">
-      <button id="modeBtn">Interact</button>
-      <div id="palette"></div>
-    </div>
-    <div id="game"></div>
-    <script type="module" src="/src/main.js"></script>
-  </body>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>My Mobile Web Game</title>
+<style>
+  html, body { margin:0; height:100%; background:#0b0b0b; touch-action:none; }
+  canvas { display:block; width:100vw; height:100vh; }
+</style>
+<canvas id="game"></canvas>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d', { alpha:false });
+
+function resize() {
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.floor(window.innerWidth * ratio);
+  canvas.height = Math.floor(window.innerHeight * ratio);
+  ctx.setTransform(ratio,0,0,ratio,0,0);
+}
+addEventListener('resize', resize, { passive:true });
+resize();
+
+// Simple input state for touch
+const input = { touches:[] };
+canvas.addEventListener('pointerdown', e => { canvas.setPointerCapture(e.pointerId); input.touches=[{x:e.clientX,y:e.clientY}]; });
+canvas.addEventListener('pointermove', e => { if (e.pressure>0) input.touches=[{x:e.clientX,y:e.clientY}]; });
+canvas.addEventListener('pointerup',   () => { input.touches=[]; });
+
+// Demo state
+let t = 0;
+function update(dt) { t += dt; }
+function draw() {
+  ctx.fillStyle = '#101014';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  // Visualize touches
+  for (const p of input.touches) {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 40, 0, Math.PI*2);
+    ctx.fillStyle = '#39f';
+    ctx.fill();
+  }
+  // Simple animated text
+  ctx.fillStyle = '#fff';
+  ctx.font = '20px system-ui, sans-serif';
+  ctx.fillText('Touch and drag', 20, 40 + Math.sin(t*2)*4);
+}
+
+// Game loop
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.033, (now - last)/1000);
+  last = now;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
 </html>
