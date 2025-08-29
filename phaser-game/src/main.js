@@ -1,57 +1,103 @@
 import Phaser from 'phaser';
 
-class DemoScene extends Phaser.Scene {
-  constructor() { 
-    super('demo'); 
+class MainScene extends Phaser.Scene {
+  constructor() {
+    super('main');
     this.player = null;
     this.cursors = null;
-    this.SPEED = 200; // px/sec
+    this.SPEED = 180;
+  }
+
+  preload() {
+    // Create a tileset texture with floor (index 0) and wall (index 1)
+    const canvas = this.textures.createCanvas('tiles', 64, 32);
+    const ctx = canvas.getContext();
+
+    // Floor tile: dark gray with grid lines
+    ctx.fillStyle = '#2b2b2b';
+    ctx.fillRect(0, 0, 32, 32);
+    ctx.strokeStyle = '#3a3a3a';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0.5, 0.5, 31, 31);
+    ctx.beginPath();
+    ctx.moveTo(0, 16.5); ctx.lineTo(32, 16.5);
+    ctx.moveTo(16.5, 0); ctx.lineTo(16.5, 32);
+    ctx.stroke();
+
+    // Wall tile: solid gray
+    ctx.fillStyle = '#666666';
+    ctx.fillRect(32, 0, 32, 32);
+
+    canvas.refresh();
   }
 
   create() {
-    // Make a big world so the camera has room to move
-    const WORLD_W = 2000, WORLD_H = 2000;
-    this.cameras.main.setBackgroundColor('#242424');
+    const MAP_W = 80;
+    const MAP_H = 80;
+    const TILE = 32;
 
-    // Simple backdrop grid so you can see motion
-    const g = this.add.graphics();
-    g.lineStyle(1, 0x3a3a3a, 1);
-    for (let x = 0; x <= WORLD_W; x += 64) g.lineBetween(x, 0, x, WORLD_H);
-    for (let y = 0; y <= WORLD_H; y += 64) g.lineBetween(0, y, WORLD_W, y);
+    const map = this.make.tilemap({ width: MAP_W, height: MAP_H, tileWidth: TILE, tileHeight: TILE });
+    const tileset = map.addTilesetImage('tiles');
+    const layer = map.createBlankLayer('layer', tileset);
 
-    // Player: a blue circle with Arcade physics
-    const circle = this.add.circle(160, 120, 18, 0x3399ff);
-    this.physics.add.existing(circle);
-    this.player = circle;
-    this.player.body.setCircle(18).setCollideWorldBounds(true);
+    // Fill floor
+    layer.fill(0);
 
-    // Physics/world bounds
-    this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
-    this.player.body.setBoundsRectangle(new Phaser.Geom.Rectangle(0, 0, WORLD_W, WORLD_H));
+    // Place walls
+    for (let y = 0; y < MAP_H; y++) {
+      for (let x = 0; x < MAP_W; x++) {
+        if (x === 0 || y === 0 || x === MAP_W - 1 || y === MAP_H - 1) {
+          layer.putTileAt(1, x, y);
+        } else if (Math.random() < 0.04) {
+          layer.putTileAt(1, x, y);
+        }
+      }
+    }
 
-    // Camera follow
-    this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
-    this.cameras.main.startFollow(this.player, true, 0.12, 0.12); // lerped follow
+    layer.setCollision(1);
 
-    // Input
+    const worldWidth = map.widthInPixels;
+    const worldHeight = map.heightInPixels;
+
+    this.physics.world.setBounds(0, 0, worldWidth, worldHeight);
+
+    const startX = TILE * 2 + TILE / 2;
+    const startY = TILE * 2 + TILE / 2;
+    const player = this.add.circle(startX, startY, 14, 0x3399ff);
+    this.physics.add.existing(player);
+    player.body.setCircle(14);
+    player.body.setCollideWorldBounds(true);
+    this.player = player;
+
+    this.physics.add.collider(player, layer);
+
     this.cursors = this.input.keyboard.createCursorKeys();
 
-    // HUD
-    this.add.text(14, 14, 'Arrow keys to move', { font: '16px Arial', fill: '#ffffff' })
-      .setScrollFactor(0); // stick to camera
+    this.cameras.main.setBounds(0, 0, worldWidth, worldHeight);
+    this.cameras.main.startFollow(player, true, 0.1, 0.1);
+
+    this.add
+      .text(12, 12, 'Arrow keys to move', { font: '16px Arial', fill: '#ffffff' })
+      .setScrollFactor(0);
   }
 
-  update(time, delta) {
+  update() {
     if (!this.player) return;
     const body = /** @type {Phaser.Physics.Arcade.Body} */ (this.player.body);
     body.setVelocity(0);
 
-    if (this.cursors.left.isDown)  body.setVelocityX(-this.SPEED);
-    if (this.cursors.right.isDown) body.setVelocityX(this.SPEED);
-    if (this.cursors.up.isDown)    body.setVelocityY(-this.SPEED);
-    if (this.cursors.down.isDown)  body.setVelocityY(this.SPEED);
+    if (this.cursors.left.isDown) {
+      body.setVelocityX(-this.SPEED);
+    } else if (this.cursors.right.isDown) {
+      body.setVelocityX(this.SPEED);
+    }
 
-    // Normalize diagonal speed
+    if (this.cursors.up.isDown) {
+      body.setVelocityY(-this.SPEED);
+    } else if (this.cursors.down.isDown) {
+      body.setVelocityY(this.SPEED);
+    }
+
     body.velocity.normalize().scale(this.SPEED);
   }
 }
@@ -59,9 +105,9 @@ class DemoScene extends Phaser.Scene {
 new Phaser.Game({
   type: Phaser.AUTO,
   parent: 'game',
-  width: 320,
-  height: 240,
+  width: 480,
+  height: 320,
   backgroundColor: '#242424',
-  scene: [DemoScene],
-  physics: { default: 'arcade' }
+  physics: { default: 'arcade' },
+  scene: MainScene
 });
