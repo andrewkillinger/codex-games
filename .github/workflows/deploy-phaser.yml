@@ -26,7 +26,7 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install dependencies
+      - name: Install deps
         working-directory: phaser-game
         run: npm ci
 
@@ -34,10 +34,17 @@ jobs:
         working-directory: phaser-game
         run: npm run build
 
-      - name: Upload artifact
+      # Put the built site under gh-pages/phaser-game/
+      - name: Stage site under subfolder
+        run: |
+          rm -rf gh-pages
+          mkdir -p gh-pages/phaser-game
+          cp -r phaser-game/dist/* gh-pages/phaser-game/
+
+      - name: Upload artifact (gh-pages)
         uses: actions/upload-pages-artifact@v3
         with:
-          path: phaser-game/dist
+          path: gh-pages
 
   deploy:
     needs: build
