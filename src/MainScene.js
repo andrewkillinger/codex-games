@@ -1,3 +1,5 @@
+import Phaser from 'phaser';
+
 const Materials = {
   EMPTY: 0,
   SAND: 1,
