@@ -3,9 +3,10 @@ import MainScene from './MainScene.js';
 
 const config = {
   type: Phaser.AUTO,
-  width: 800,
-  height: 600,
+  width: 375,
+  height: 812,
   backgroundColor: '#000000',
+  parent: 'game',
   physics: {
     default: 'arcade',
     arcade: {
