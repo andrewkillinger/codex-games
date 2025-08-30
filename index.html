@@ -34,6 +34,12 @@
     cursor: pointer;
   }
 
+  /* Larger interact button for easier tapping */
+  #interactButton {
+    padding: 12px 20px;
+    font-size: 20px;
+  }
+
   #ui button.active {
     background: #3388ff;
     color: #fff;
@@ -49,7 +55,7 @@
 <div id="game"></div>
 <div id="ui">
   <div id="toolbar">
-    <button data-tool="block" class="active">Block</button>
+    <button id="interactButton" data-tool="block" class="active">Block</button>
     <button data-tool="smallBomb">Small Bomb</button>
     <button data-tool="bigBomb">Large Bomb</button>
     <select id="materialSelect">
