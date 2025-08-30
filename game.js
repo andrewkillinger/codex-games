@@ -3,6 +3,7 @@ class SandboxScene extends Phaser.Scene {
     super('sandbox');
     this.blocks = [];
     this.currentTool = 'block';
+    this.currentMaterial = 'stone';
   }
 
   preload() {
@@ -21,12 +22,32 @@ class SandboxScene extends Phaser.Scene {
     // ground
     this.matter.add.rectangle(w / 2, h - 25, w, 50, { isStatic: true, friction: 1 });
 
-    // input tool selection
-    const keys = this.input.keyboard.addKeys('ONE,TWO,THREE');
-    keys.ONE.on('down', () => (this.currentTool = 'block'));
-    keys.TWO.on('down', () => (this.currentTool = 'smallBomb'));
-    keys.THREE.on('down', () => (this.currentTool = 'bigBomb'));
+    // menu buttons
+    const toolbar = document.getElementById('toolbar');
+    toolbar.querySelectorAll('button').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.currentTool = btn.dataset.tool;
+        toolbar
+          .querySelectorAll('button')
+          .forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+      });
+    });
 
+    // material selection
+    document
+      .getElementById('materialSelect')
+      .addEventListener('change', (e) => {
+        this.currentMaterial = e.target.value;
+      });
+
+    // keyboard input fallback
+    const keys = this.input.keyboard.addKeys('ONE,TWO,THREE');
+    keys.ONE.on('down', () => toolbar.querySelector('button[data-tool="block"]').click());
+    keys.TWO.on('down', () => toolbar.querySelector('button[data-tool="smallBomb"]').click());
+    keys.THREE.on('down', () => toolbar.querySelector('button[data-tool="bigBomb"]').click());
+
+    // placing objects
     this.input.on('pointerdown', (pointer) => {
       switch (this.currentTool) {
         case 'block':
@@ -40,14 +61,17 @@ class SandboxScene extends Phaser.Scene {
           break;
       }
     });
-
-    this.add.text(10, 10, '1: Block  2: Small Bomb  3: Large Bomb', { font: '16px monospace', fill: '#fff' });
   }
 
   placeBlock(x, y) {
     const size = 40;
-    const rect = this.add.rectangle(x, y, size, size, 0x7f7fff);
-    this.matter.add.gameObject(rect);
+    let color = 0x7f7fff;
+    if (this.currentMaterial === 'wood') {
+      color = 0xdeb887;
+    }
+    const rect = this.add.rectangle(x, y, size, size, color);
+    const opts = this.currentMaterial === 'wood' ? { density: 0.0005 } : { density: 0.001 };
+    this.matter.add.gameObject(rect, opts);
     rect.setFriction(0.9);
     rect.setBounce(0.1);
     rect.health = 100;
