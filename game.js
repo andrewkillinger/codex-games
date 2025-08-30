@@ -12,6 +12,16 @@ class SandboxScene extends Phaser.Scene {
     g.fillStyle(0xffffff, 1);
     g.fillCircle(8, 8, 8);
     g.generateTexture('particle', 16, 16);
+    g.clear();
+
+    // generate simple textures for sun and moon
+    g.fillStyle(0xffdd55, 1);
+    g.fillCircle(32, 32, 32);
+    g.generateTexture('sun', 64, 64);
+    g.clear();
+    g.fillStyle(0xffffff, 1);
+    g.fillCircle(28, 28, 28);
+    g.generateTexture('moon', 56, 56);
     g.destroy();
   }
 
@@ -21,6 +31,11 @@ class SandboxScene extends Phaser.Scene {
 
     // ground
     this.matter.add.rectangle(w / 2, h - 25, w, 50, { isStatic: true, friction: 1 });
+
+    // sky elements
+    this.sun = this.add.image(0, 0, 'sun').setDepth(-1);
+    this.moon = this.add.image(0, 0, 'moon').setDepth(-1);
+    this.cameras.main.setBackgroundColor('#87ceeb');
 
     // menu buttons
     const toolbar = document.getElementById('toolbar');
@@ -47,8 +62,11 @@ class SandboxScene extends Phaser.Scene {
     keys.TWO.on('down', () => toolbar.querySelector('button[data-tool="smallBomb"]').click());
     keys.THREE.on('down', () => toolbar.querySelector('button[data-tool="bigBomb"]').click());
 
-    // placing objects
+    // placing objects (ignore UI clicks)
     this.input.on('pointerdown', (pointer) => {
+      if (pointer.event.target.tagName !== 'CANVAS') {
+        return;
+      }
       switch (this.currentTool) {
         case 'block':
           this.placeBlock(pointer.worldX, pointer.worldY);
@@ -123,6 +141,37 @@ class SandboxScene extends Phaser.Scene {
     });
 
     bomb.destroy();
+  }
+
+  update(time) {
+    const cycle = 300000; // 5 minutes for full day-night cycle
+    const t = (time % cycle) / cycle; // 0..1
+    const w = this.scale.width;
+    const h = this.scale.height;
+
+    // positions for sun and moon
+    const angle = t * 2 * Math.PI;
+    const radiusY = h * 0.4;
+    const centerY = h * 0.6;
+
+    const sunX = w * t;
+    const sunY = centerY - Math.sin(angle) * radiusY;
+    this.sun.setPosition(sunX, sunY).setAlpha(t < 0.5 ? 1 : 0);
+
+    const moonT = (t + 0.5) % 1;
+    const moonAngle = moonT * 2 * Math.PI;
+    const moonX = w * moonT;
+    const moonY = centerY - Math.sin(moonAngle) * radiusY;
+    this.moon.setPosition(moonX, moonY).setAlpha(t < 0.5 ? 0 : 1);
+
+    // sky color transitions
+    const dayColor = Phaser.Display.Color.HexStringToColor('#87ceeb');
+    const nightColor = Phaser.Display.Color.HexStringToColor('#001028');
+    const colorInterp = (1 - Math.cos(angle)) / 2;
+    const c = Phaser.Display.Color.Interpolate.ColorWithColor(dayColor, nightColor, 1, colorInterp);
+    this.cameras.main.setBackgroundColor(
+      Phaser.Display.Color.GetColor(c.r, c.g, c.b)
+    );
   }
 }
 
