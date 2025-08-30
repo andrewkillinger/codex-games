@@ -1,2 +1,11 @@
 node_modules/
 phaser-game/
+dist/
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.mp3
+*.mp4
+assets/
